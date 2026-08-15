@@ -13,6 +13,7 @@ Live: https://anshyd1.github.io/Pump-book/
 - **Full step-by-step calculation view** (हर line का हिसाब) + per-nozzle detail
 - Udhari, Paytm, F-Card, PhonePe, bank, expenses and cash reconciliation
 - Balance/Fault with Match/Check result
+- **Slip OCR scanner** — IndianOil totalizer slip को camera/gallery से scan करके Nozzle 1–4 के `CumVolume` को T1–T4 Evening readings में auto-fill करें (confirm/edit screen सहित)
 - **Camera & gallery** — 📷 se har totalizer (T1-T4) ki reading photo lo, thumbnail tap karke bada dekho, save/share karo
 - **Empty inputs** — no prefilled zeros to delete
 - **Auto-save** draft to device (har change save hota hai)

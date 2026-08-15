@@ -5,6 +5,7 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig({
   base: '/Pump-book/',
   plugins: [react()],
+  server: { allowedHosts: true },
   build: {
     outDir: fileURLToPath(new URL('./dist', import.meta.url)),
     emptyOutDir: true,

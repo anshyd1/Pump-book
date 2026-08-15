@@ -1,4 +1,4 @@
-const CACHE = 'pump-book-v3';
+const CACHE = 'pump-book-v4';
 const CORE = ['./', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE)).then(() => self.skipWaiting()));
