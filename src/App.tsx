@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReceiptScanner from './ReceiptScanner'
 import BrandMascot from './BrandMascot'
+import PaymentIcon from './PaymentIcon'
+import type { PaymentKind } from './PaymentIcon'
 import type { ReadingSlot } from './receiptOcr'
 
 type Fuel = 'HSD' | 'MS'
@@ -71,6 +73,13 @@ function Field({ label, value, onChange, step = '0.01', placeholder, type = 'num
       onFocus={type === 'number' ? e => e.currentTarget.select() : undefined}
       onChange={e => onChange(e.target.value)}
     />
+  </label>
+}
+
+function PaymentField({ kind, label, value, onChange }: { kind: PaymentKind; label: string; value: string; onChange: (value: string) => void }) {
+  return <label className={`payment-field ${kind}`}>
+    <span className="payment-field-head"><PaymentIcon kind={kind}/><span><b>{label}</b><small>{kind === 'cash' ? 'Physical cash' : kind === 'udhari' ? 'Pending credit' : kind === 'kharche' ? 'Day expenses' : 'Received / adjusted'}</small></span></span>
+    <span className="money-input"><i>₹</i><input inputMode="decimal" type="number" step="0.01" value={value} placeholder="0" onFocus={event => event.currentTarget.select()} onChange={event => onChange(event.target.value)}/></span>
   </label>
 }
 
@@ -250,7 +259,7 @@ export default function App() {
         <section className="card">
           <div className="section-head"><div className="section-title"><span className="section-icon wallet-icon">▣</span><div><p className="eyebrow">Step 04 · Reconcile</p><h2>Payment, udhari &amp; cash</h2><p className="section-sub">Sale का पूरा मिलान</p></div></div><span className="soft-badge">Final step</span></div>
           <div className="payment-grid">
-            {(Object.entries({ udhari: 'Total Udhari', paytm: 'Total Paytm', fcard: 'Total F-Card', phonepe: 'Total PhonePe', bank: 'Bank / Other', kharche: 'Total Kharche', cash: 'Total Cash', other: 'Other adjustment' }) as [keyof Payments, string][]).map(([key, label]) => <Field key={key} label={label} value={draft.payments[key]} placeholder="0" onChange={v => updatePayment(key, v)} />)}
+            {(Object.entries({ udhari: 'Udhari', paytm: 'Paytm', fcard: 'F-Card', phonepe: 'PhonePe', bank: 'Bank', kharche: 'Kharche', cash: 'Cash', other: 'Other' }) as [PaymentKind, string][]).map(([key, label]) => <PaymentField key={key} kind={key} label={label} value={draft.payments[key]} onChange={value => updatePayment(key, value)} />)}
           </div>
           <div className="recon-grid"><Metric label="Final fuel sale" value={inr.format(finalSale)} /><Metric label="Total accounted" value={inr.format(accounted)} /><Metric label="Balance / fault" value={inr.format(balance)} danger={!matched} /></div>
           <div role="status" className={`match ${matched ? '' : 'check'}`}>{matched ? 'MATCH — हिसाब बराबर है' : `CHECK — ${inr.format(balance)} का difference`}</div>

@@ -14,6 +14,8 @@ A complete visual and scanning upgrade with the new **Pumpu** mascot, petrol-pum
 - Smart fallback handles zoomed, lightly rotated (±3°), faint and imperfectly framed slips; `rotateAuto` also checks orientation
 - Animated scanner frame, laser sweep, progress stages, confidence score and editable verification
 - Pumpu mascot, branded app header, new green/amber fuel theme and four-step daily closing journey
+- Fluid device spacing with `clamp()`, safe-area support and adaptive scanner height for small/large phones
+- Branded payment tiles: Paytm, PhonePe, Cash, Bank, F-Card, Udhari, Kharche and Other
 - Mode 1: HSD / HSD / HSD / HSD · Mode 2: MS / HSD / MS / HSD
 - Evening minus Morning live totalizer differences
 - Testing deductions and editable HSD/MS rates

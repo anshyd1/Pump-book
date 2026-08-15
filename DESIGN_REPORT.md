@@ -43,6 +43,12 @@ The scanner now uses a multi-pass strategy:
 
 The scanner interface includes animated framing corners, laser sweep, Pumpu scan animation, progress stages, confidence display and manual corrections.
 
+## Adaptive layout & payment identity (2.1)
+- Spacing, type and card sizes now use fluid `clamp()` values instead of one fixed phone size.
+- Safe-area insets and `dvh` prevent scanner controls from being cut off on notched or short devices.
+- Payment inputs are distinct branded tiles: Paytm wordmark, PhonePe badge, Cash, Bank, F-Card, Udhari, Kharche and Other icons.
+- Payment grid automatically changes from four columns to two or one based on available width.
+
 ## Engineering and release
 - React + TypeScript build passes.
 - OCR remains on-device with Tesseract.js.
