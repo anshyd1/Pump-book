@@ -90,6 +90,22 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
       }
     }
 
+    // Nozzle 1 की line ऊपर हल्की/तिरछी होती है। उसके लिए छोटा high-focus retry रखें।
+    if (!readings[0]) {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
+      const top = Math.max(0, Math.round(height * 0.266))
+      const { data } = await worker.recognize(file, {
+        rectangle: {
+          left: Math.round(width * 0.325),
+          top,
+          width: Math.round(width * 0.39),
+          height: Math.max(90, Math.min(height - top, Math.round(height * 0.035)))
+        }
+      })
+      texts[0] += `\nT1 focused retry:\n${data.text}`
+      readings[0] = cleanNumber(data.text)
+    }
+
     return {
       readings,
       confidence: readings.filter(Boolean).length * 25,
