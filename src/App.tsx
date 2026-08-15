@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
 import ReceiptScanner from './ReceiptScanner'
 import type { ReadingSlot } from './receiptOcr'
 
@@ -74,43 +73,6 @@ function Field({ label, value, onChange, step = '0.01', placeholder, type = 'num
   </label>
 }
 
-function CameraButtons({ onPhoto }: { onPhoto: (dataUrl: string) => void }) {
-  const camRef = useRef<HTMLInputElement>(null)
-  const galRef = useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = useState(false)
-  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    e.target.value = ''
-    if (!f || !f.type.startsWith('image/')) return
-    setBusy(true)
-    const reader = new FileReader()
-    reader.onload = () => {
-      const img = new Image()
-      img.onload = () => {
-        // Compress karke chhota banao — phone ki photo 3-4 MB hoti hai, storage ke liye 1000px tak resize
-        const MAX = 1000
-        const scale = Math.min(1, MAX / Math.max(img.width, img.height))
-        const c = document.createElement('canvas')
-        c.width = Math.max(1, Math.round(img.width * scale))
-        c.height = Math.max(1, Math.round(img.height * scale))
-        c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
-        onPhoto(c.toDataURL('image/jpeg', 0.72))
-        setBusy(false)
-      }
-      img.onerror = () => setBusy(false)
-      img.src = String(reader.result)
-    }
-    reader.onerror = () => setBusy(false)
-    reader.readAsDataURL(f)
-  }
-  return <div className="cam-actions">
-    <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={handleFile} />
-    <input ref={galRef} type="file" accept="image/*" hidden onChange={handleFile} />
-    <button type="button" className="cam-btn" disabled={busy} title="Camera se photo lo" aria-label="Camera se reading photo lo" onClick={() => camRef.current?.click()}>{busy ? '…' : '📷'}</button>
-    <button type="button" className="gal-btn" disabled={busy} title="Gallery se photo chuno" aria-label="Gallery se photo upload karo" onClick={() => galRef.current?.click()}>🖼</button>
-  </div>
-}
-
 export default function App() {
   const STORAGE_KEY = 'pump-book-draft-v3'
   const [draft, setDraft] = useState<Draft>(() => {
@@ -125,7 +87,6 @@ export default function App() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null)
   const [standalone, setStandalone] = useState(false)
-  const [lightbox, setLightbox] = useState<{ photo: string; label: string } | null>(null)
   const map = productMap[draft.mode]
   const fuels = useMemo(() => Array.from(new Set(map)), [map])
   const diffs = useMemo(() => draft.readings[draft.mode].map(r => num(r.evening) - num(r.morning)), [draft.readings, draft.mode])
@@ -169,30 +130,19 @@ export default function App() {
     if (choice.outcome === 'accepted') setInstallEvt(null)
   }
 
-  // Photo lightbox — Escape + scroll lock
-  useEffect(() => {
-    if (!lightbox) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
-    document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', onKey)
-    return () => { document.body.style.overflow = ''; window.removeEventListener('keydown', onKey) }
-  }, [lightbox])
-
   const updateReading = (index: number, key: keyof Reading, value: string) => setDraft(d => {
     const readings = { ...d.readings, [d.mode]: d.readings[d.mode].map((r, i) => i === index ? { ...r, [key]: value } : r) }
     return { ...d, readings }
   })
   const updatePayment = (key: keyof Payments, value: string) => setDraft(d => ({ ...d, payments: { ...d.payments, [key]: value } }))
-  const applyScannedReadings = (values: string[], photo: string, slot: ReadingSlot) => setDraft(d => ({
+  const applyScannedReadings = (values: string[], slot: ReadingSlot) => setDraft(d => ({
     ...d,
     readings: {
       ...d.readings,
       [d.mode]: d.readings[d.mode].map((reading, index) => ({
         ...reading,
         // सुबह की slip Opening में और शाम की slip Closing में—दो scan से कुल 8 readings।
-        [slot]: values[index] || reading[slot],
-        // पूरी slip एक ही photo है; storage बचाने के लिए latest slip को T1 के साथ रखें।
-        photo: index === 0 && photo ? photo : reading.photo
+        [slot]: values[index] || reading[slot]
       }))
     }
   }))
@@ -232,19 +182,10 @@ export default function App() {
         <section className="card">
           <div className="section-head"><div><p className="eyebrow">Step 1</p><h2>Totalizer readings</h2></div><div className="section-tools"><span className="help">सुबह + शाम की slips scan करें · कुल 8 readings</span><ReceiptScanner onApply={applyScannedReadings} /></div></div>
           <div className="totalizer-grid">{map.map((fuel, i) => <article className="totalizer" key={`${draft.mode}-${i}`}>
-            <div className="totalizer-head"><b>T{i + 1}</b><span className={`fuel ${fuel.toLowerCase()}`}>{fuel}</span><CameraButtons onPhoto={dataUrl => updateReading(i, 'photo', dataUrl)} /></div>
+            <div className="totalizer-head"><b>T{i + 1}</b><span className={`fuel ${fuel.toLowerCase()}`}>{fuel}</span></div>
             <Field label="Evening / Closing" value={draft.readings[draft.mode][i].evening} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'evening', v)} />
             <Field label="Morning / Opening" value={draft.readings[draft.mode][i].morning} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'morning', v)} />
             <div className={`difference ${diffs[i] < 0 ? 'bad' : ''}`}><span>Difference</span><strong>{qty(diffs[i])}</strong></div>
-            {draft.readings[draft.mode][i].photo
-              ? <div className="photo-preview">
-                <button type="button" className="photo-thumb" title="Photo bada dekhne ke liye tap karo" onClick={() => setLightbox({ photo: draft.readings[draft.mode][i].photo, label: `${fuel} T${i + 1} reading photo` })}>
-                  <img src={draft.readings[draft.mode][i].photo} alt={`${fuel} T${i + 1} reading`} />
-                  <span className="photo-zoom">🔍</span>
-                </button>
-                <button type="button" className="photo-del" onClick={() => updateReading(i, 'photo', '')}>✕ Photo हटाओ</button>
-              </div>
-              : <p className="photo-note">📷 = camera se reading photo lo · 🖼 = gallery se chuno</p>}
           </article>)}</div>
           {hasNegative && <div className="alert">Negative difference मिला है—Evening और Morning reading check करें।</div>}
         </section>
@@ -316,13 +257,6 @@ export default function App() {
       <footer>Pump Book · Data आपके device पर local रहता है · Auto-save on</footer>
     </div>
 
-    {lightbox && <div className="lightbox" onClick={() => setLightbox(null)}>
-      <div className="lightbox-inner" onClick={e => e.stopPropagation()}>
-        <div className="lightbox-head"><span>{lightbox.label}</span><a className="lightbox-dl" href={lightbox.photo} download={`${lightbox.label.replace(/\s+/g, '-')}.jpg`}>⬇ Save</a><button type="button" className="lightbox-close" onClick={() => setLightbox(null)}>✕</button></div>
-        <img src={lightbox.photo} alt={lightbox.label} />
-        <p className="lightbox-hint">Photo se reading padh kar number type karo · ⬇ Save se photo share/download bhi kar sakte ho</p>
-      </div>
-    </div>}
   </>
 }
 
