@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { scanReceipt } from './receiptOcr'
+import type { ReadingSlot } from './receiptOcr'
 
 const makeSavedPhoto = (file: File): Promise<string> => new Promise(resolve => {
   const reader = new FileReader()
@@ -23,7 +24,7 @@ const makeSavedPhoto = (file: File): Promise<string> => new Promise(resolve => {
 })
 
 type Props = {
-  onApply: (readings: string[], photo: string) => void
+  onApply: (readings: string[], photo: string, slot: ReadingSlot) => void
 }
 
 export default function ReceiptScanner({ onApply }: Props) {
@@ -36,6 +37,9 @@ export default function ReceiptScanner({ onApply }: Props) {
   const [error, setError] = useState('')
   const [readings, setReadings] = useState(['', '', '', ''])
   const [confidence, setConfidence] = useState<number | null>(null)
+  const [slot, setSlot] = useState<ReadingSlot>('evening')
+  const [slipTime, setSlipTime] = useState('')
+  const [timeDetected, setTimeDetected] = useState(false)
   const [photo, setPhoto] = useState('')
   const [preview, setPreview] = useState('')
   const [rawText, setRawText] = useState('')
@@ -51,6 +55,8 @@ export default function ReceiptScanner({ onApply }: Props) {
     setError('')
     setReadings(['', '', '', ''])
     setConfidence(null)
+    setSlipTime('')
+    setTimeDetected(false)
     setRawText('')
     setProgress(0)
     setStatus('Scanner तैयार हो रहा है…')
@@ -65,6 +71,9 @@ export default function ReceiptScanner({ onApply }: Props) {
       setReadings(result.readings)
       setConfidence(result.confidence)
       setRawText(result.rawText)
+      setSlipTime(result.slipTime)
+      setTimeDetected(Boolean(result.suggestedSlot))
+      if (result.suggestedSlot) setSlot(result.suggestedSlot)
       setPhoto(savedPhoto)
       if (!result.readings.some(Boolean)) setError('Reading साफ नहीं मिली। फोटो सीधी, पास से और अच्छी रोशनी में लेकर दोबारा scan करें।')
     } catch (scanError) {
@@ -89,7 +98,7 @@ export default function ReceiptScanner({ onApply }: Props) {
 
   const apply = () => {
     if (!readings.some(Boolean)) return
-    onApply(readings, photo)
+    onApply(readings, photo, slot)
     setOpen(false)
   }
 
@@ -118,7 +127,14 @@ export default function ReceiptScanner({ onApply }: Props) {
               <span>{progress}% · पहली बार OCR data download होने में थोड़ा समय लग सकता है</span>
             </div> : <>
               <div className="scan-result-head"><strong>मिली हुई CumVolume readings</strong>{confidence !== null && <span>OCR {confidence}%</span>}</div>
-              <p className="scan-warning">⚠ Confirm करने से पहले slip से चारों numbers जरूर मिलाएँ।</p>
+              <div className="slot-picker">
+                <div><strong>किस समय की slip?</strong><span>{timeDetected ? `Time ${slipTime} से auto-detect हुआ` : 'Time साफ नहीं मिला—सही विकल्प चुनें'}</span></div>
+                <div className="slot-buttons">
+                  <button type="button" className={slot === 'morning' ? 'active' : ''} onClick={() => setSlot('morning')}>🌅 सुबह / Opening</button>
+                  <button type="button" className={slot === 'evening' ? 'active' : ''} onClick={() => setSlot('evening')}>🌆 शाम / Closing</button>
+                </div>
+              </div>
+              <p className="scan-warning">⚠ Confirm करने से पहले समय और चारों numbers slip से जरूर मिलाएँ।</p>
               <div className="scan-reading-grid">{readings.map((reading, index) => <label key={index}>
                 <span>T{index + 1}</span>
                 <input inputMode="decimal" value={reading} placeholder="नहीं मिली—यहाँ भरें" onChange={event => setReadings(values => values.map((value, i) => i === index ? event.target.value : value))} />
@@ -131,7 +147,7 @@ export default function ReceiptScanner({ onApply }: Props) {
 
         <div className="scanner-footer">
           {!busy && <button type="button" className="secondary" onClick={() => cameraRef.current?.click()}>📷 फिर scan करें</button>}
-          <button type="button" className="primary" disabled={busy || !readings.some(Boolean)} onClick={apply}>✓ Confirm &amp; Auto Fill</button>
+          <button type="button" className="primary" disabled={busy || !readings.some(Boolean)} onClick={apply}>✓ {slot === 'morning' ? 'Morning' : 'Evening'} Auto Fill</button>
         </div>
       </section>
     </div>}

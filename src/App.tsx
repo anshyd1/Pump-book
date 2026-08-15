@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import ReceiptScanner from './ReceiptScanner'
+import type { ReadingSlot } from './receiptOcr'
 
 type Fuel = 'HSD' | 'MS'
 type Mode = 'allHsd' | 'mixed'
@@ -182,14 +183,15 @@ export default function App() {
     return { ...d, readings }
   })
   const updatePayment = (key: keyof Payments, value: string) => setDraft(d => ({ ...d, payments: { ...d.payments, [key]: value } }))
-  const applyScannedReadings = (values: string[], photo: string) => setDraft(d => ({
+  const applyScannedReadings = (values: string[], photo: string, slot: ReadingSlot) => setDraft(d => ({
     ...d,
     readings: {
       ...d.readings,
       [d.mode]: d.readings[d.mode].map((reading, index) => ({
         ...reading,
-        evening: values[index] || reading.evening,
-        // पूरी slip एक ही photo है; storage बचाने के लिए उसे T1 के साथ रखें।
+        // सुबह की slip Opening में और शाम की slip Closing में—दो scan से कुल 8 readings।
+        [slot]: values[index] || reading[slot],
+        // पूरी slip एक ही photo है; storage बचाने के लिए latest slip को T1 के साथ रखें।
         photo: index === 0 && photo ? photo : reading.photo
       }))
     }
@@ -228,7 +230,7 @@ export default function App() {
 
       <main>
         <section className="card">
-          <div className="section-head"><div><p className="eyebrow">Step 1</p><h2>Totalizer readings</h2></div><div className="section-tools"><span className="help">Slip scan करके T1–T4 auto-fill करें</span><ReceiptScanner onApply={applyScannedReadings} /></div></div>
+          <div className="section-head"><div><p className="eyebrow">Step 1</p><h2>Totalizer readings</h2></div><div className="section-tools"><span className="help">सुबह + शाम की slips scan करें · कुल 8 readings</span><ReceiptScanner onApply={applyScannedReadings} /></div></div>
           <div className="totalizer-grid">{map.map((fuel, i) => <article className="totalizer" key={`${draft.mode}-${i}`}>
             <div className="totalizer-head"><b>T{i + 1}</b><span className={`fuel ${fuel.toLowerCase()}`}>{fuel}</span><CameraButtons onPhoto={dataUrl => updateReading(i, 'photo', dataUrl)} /></div>
             <Field label="Evening / Closing" value={draft.readings[draft.mode][i].evening} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'evening', v)} />

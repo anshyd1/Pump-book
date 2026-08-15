@@ -1,9 +1,13 @@
 import { createWorker, PSM } from 'tesseract.js'
 
+export type ReadingSlot = 'morning' | 'evening'
+
 export type ScanResult = {
   readings: string[]
   confidence: number
   rawText: string
+  slipTime: string
+  suggestedSlot: ReadingSlot | null
 }
 
 const cleanNumber = (value: string): string => {
@@ -60,6 +64,17 @@ export function parseCumVolumes(rawText: string): string[] {
   })
 }
 
+export function parseSlipTime(rawText: string): { slipTime: string; suggestedSlot: ReadingSlot | null } {
+  // सामान्य print: Time :18:56:34 — OCR spaces और . को separator बना सकता है।
+  const timeLine = rawText.match(/time\s*[:\-]?\s*([0-2]?\d)\s*[:.]\s*([0-5]\d)(?:\s*[:.]\s*([0-5]\d))?/i)
+  const anyTime = timeLine ?? rawText.match(/\b([0-2]?\d)\s*:\s*([0-5]\d)(?:\s*:\s*([0-5]\d))?\b/)
+  if (!anyTime) return { slipTime: '', suggestedSlot: null }
+  const hour = Number(anyTime[1])
+  if (hour > 23) return { slipTime: '', suggestedSlot: null }
+  const slipTime = `${String(hour).padStart(2, '0')}:${anyTime[2]}${anyTime[3] ? `:${anyTime[3]}` : ''}`
+  return { slipTime, suggestedSlot: hour < 12 ? 'morning' : 'evening' }
+}
+
 export async function scanReceipt(file: File, onProgress: (progress: number, status: string) => void): Promise<ScanResult> {
   const worker = await createWorker('eng', 1, {
     logger: message => onProgress(message.progress || 0, message.status)
@@ -71,10 +86,12 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
       user_defined_dpi: '300'
     })
     const { data } = await worker.recognize(file, { rotateAuto: true })
+    const timing = parseSlipTime(data.text)
     return {
       readings: parseCumVolumes(data.text),
       confidence: Math.round(data.confidence),
-      rawText: data.text
+      rawText: data.text,
+      ...timing
     }
   } finally {
     await worker.terminate()
