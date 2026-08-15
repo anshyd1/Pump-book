@@ -49,6 +49,12 @@ The scanner interface includes animated framing corners, laser sweep, Pumpu scan
 - Payment inputs are distinct branded tiles: Paytm wordmark, PhonePe badge, Cash, Bank, F-Card, Udhari, Kharche and Other icons.
 - Payment grid automatically changes from four columns to two or one based on available width.
 
+## Mobile interaction & payment artwork (2.2)
+- Pinch/double-tap viewport zoom is locked for an app-like mobile shell.
+- Inputs use a minimum 16px mobile font to prevent automatic focus zoom on iOS.
+- Eight dedicated local SVG payment illustrations replace generic line symbols.
+- All artwork ships inside the PWA and works without an image CDN.
+
 ## Engineering and release
 - React + TypeScript build passes.
 - OCR remains on-device with Tesseract.js.
