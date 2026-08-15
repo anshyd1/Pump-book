@@ -5,15 +5,15 @@ export type ScanResult = { readings: string[]; confidence: number; rawText: stri
 
 type LoadedImage = { width: number; height: number; image: HTMLImageElement }
 
-const numberFrom = (value: string): string => {
-  const fixed = value.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/,/g, '.').replace(/\s+/g, '')
-  for (const match of fixed.matchAll(/(\d{4,9})\.(\d{3})/g)) {
-    const result = `${match[1]}.${match[2]}`
-    const amount = Number(result)
-    if (amount >= 10_000 && amount < 10_000_000) return result
-  }
-  return ''
+const candidateNumbers = (value: string): string[] => {
+  // Horizontal OCR gaps हटाएँ, लेकिन lines को कभी concatenate न करें—वरना दो अलग numbers मिलकर fake decimal बनाते हैं।
+  const fixed = value.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/,/g, '.').replace(/[ \t]+/g, '')
+  return Array.from(fixed.matchAll(/(\d{4,9})\.(\d{3})/g))
+    .map(match => `${match[1]}.${match[2]}`)
+    .filter(result => Number(result) >= 10_000 && Number(result) < 10_000_000)
 }
+const numberFrom = (value: string): string => candidateNumbers(value)[0] ?? ''
+const largestNumberFrom = (value: string): string => candidateNumbers(value).sort((a, b) => Number(b) - Number(a))[0] ?? ''
 
 const loadImage = (file: File): Promise<LoadedImage> => new Promise((resolve, reject) => {
   const url = URL.createObjectURL(file)
@@ -24,8 +24,8 @@ const loadImage = (file: File): Promise<LoadedImage> => new Promise((resolve, re
 })
 
 const thresholdCrop = (image: HTMLImageElement, width: number, height: number, threshold = 130): HTMLCanvasElement => {
-  const sx = Math.round(width * 0.315), sy = Math.round(height * 0.255)
-  const sw = Math.round(width * 0.42), sh = Math.round(height * 0.058)
+  const sx = Math.round(width * 0.325), sy = Math.round(height * 0.266)
+  const sw = Math.round(width * 0.39), sh = Math.round(height * 0.035)
   const canvas = document.createElement('canvas')
   canvas.width = Math.min(2600, sw * 2); canvas.height = Math.round(sh * (canvas.width / sw))
   const context = canvas.getContext('2d', { willReadFrequently: true })!
@@ -113,15 +113,14 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
       completed = index + 1; onProgress(completed / 5, 'recognizing text')
     }
 
-    // Pass 2: high-contrast T1 handles faint thermal print.
-    if (!readings[0]) {
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
-      for (const threshold of [130, 150]) {
-        const { data } = await worker.recognize(thresholdCrop(loaded.image, width, height, threshold))
-        texts.push(`T1 contrast ${threshold}: ${data.text}`)
-        readings[0] = numberFrom(data.text)
-        if (readings[0]) break
-      }
+    // Pass 2: T1 हमेशा dedicated high-contrast crop से verify/override हो।
+    // Fast line कभी-कभी पास वाली ShMTHVol को valid totalizer समझ लेती है।
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
+    for (const threshold of [130, 150]) {
+      const { data } = await worker.recognize(thresholdCrop(loaded.image, width, height, threshold))
+      texts.push(`T1 contrast ${threshold}: ${data.text}`)
+      const verifiedT1 = largestNumberFrom(data.text)
+      if (verifiedT1) { readings[0] = verifiedT1; break }
     }
 
     // Pass 3: layout-independent OCR handles zoom, rotation and imperfect framing.
