@@ -20,12 +20,12 @@ const cleanNumber = (value: string): string => {
   return amount >= 10_000 && amount < 10_000_000 ? result : ''
 }
 
-const imageSize = (file: File): Promise<{ width: number; height: number }> => new Promise((resolve, reject) => {
+const loadImage = (file: File): Promise<{ width: number; height: number; image: HTMLImageElement }> => new Promise((resolve, reject) => {
   const url = URL.createObjectURL(file)
   const image = new Image()
   image.onload = () => {
     URL.revokeObjectURL(url)
-    resolve({ width: image.naturalWidth, height: image.naturalHeight })
+    resolve({ width: image.naturalWidth, height: image.naturalHeight, image })
   }
   image.onerror = () => {
     URL.revokeObjectURL(url)
@@ -34,12 +34,34 @@ const imageSize = (file: File): Promise<{ width: number; height: number }> => ne
   image.src = url
 })
 
+const makeT1HighContrastCrop = (image: HTMLImageElement, width: number, height: number): HTMLCanvasElement => {
+  const sx = Math.round(width * 0.325)
+  const sy = Math.round(height * 0.266)
+  const sw = Math.round(width * 0.39)
+  const sh = Math.round(height * 0.035)
+  const canvas = document.createElement('canvas')
+  canvas.width = sw * 2
+  canvas.height = sh * 2
+  const context = canvas.getContext('2d', { willReadFrequently: true })!
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const luminance = pixels.data[i] * 0.299 + pixels.data[i + 1] * 0.587 + pixels.data[i + 2] * 0.114
+    const value = luminance > 130 ? 255 : 0
+    pixels.data[i] = value
+    pixels.data[i + 1] = value
+    pixels.data[i + 2] = value
+  }
+  context.putImageData(pixels, 0, 0)
+  return canvas
+}
+
 // IndianOil की 4-nozzle slip में CumVolume values एक fixed vertical order में होती हैं।
 // पूरी photo का slow/free-form OCR करने के बजाय केवल चार पतली reading lines scan होती हैं।
 const LINE_TOP_RATIOS = [0.2734, 0.4785, 0.7080, 0.9717]
 
 export async function scanReceipt(file: File, onProgress: (progress: number, status: string) => void): Promise<ScanResult> {
-  const { width, height } = await imageSize(file)
+  const { width, height, image } = await loadImage(file)
   let completed = 0
   const worker = await createWorker('eng', 1, {
     logger: message => {
@@ -90,19 +112,26 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
       }
     }
 
-    // Nozzle 1 की line ऊपर हल्की/तिरछी होती है। उसके लिए छोटा high-focus retry रखें।
+    // T1 हल्का और तिरछा है: crop को 2x करके black/white threshold OCR करें।
     if (!readings[0]) {
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
+      const crop = makeT1HighContrastCrop(image, width, height)
+      const { data } = await worker.recognize(crop)
+      texts[0] += `\nT1 high-contrast retry:\n${data.text}`
+      readings[0] = cleanNumber(data.text)
+    }
+
+    // अंतिम raw focused retry—अलग camera processing वाले phones के लिए।
+    if (!readings[0]) {
       const top = Math.max(0, Math.round(height * 0.266))
       const { data } = await worker.recognize(file, {
         rectangle: {
-          left: Math.round(width * 0.325),
-          top,
+          left: Math.round(width * 0.325), top,
           width: Math.round(width * 0.39),
           height: Math.max(90, Math.min(height - top, Math.round(height * 0.035)))
         }
       })
-      texts[0] += `\nT1 focused retry:\n${data.text}`
+      texts[0] += `\nT1 raw retry:\n${data.text}`
       readings[0] = cleanNumber(data.text)
     }
 

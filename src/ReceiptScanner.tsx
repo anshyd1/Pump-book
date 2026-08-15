@@ -82,7 +82,7 @@ export default function ReceiptScanner({ onApply }: Props) {
     {open && <div className="scanner-backdrop" role="presentation" onClick={close}>
       <section className="scanner-modal" role="dialog" aria-modal="true" aria-labelledby="scanner-title" onClick={event => event.stopPropagation()}>
         <div className="scanner-head">
-          <div><p className="eyebrow">OCR SCANNER</p><h2 id="scanner-title">IndianOil slip scan</h2></div>
+          <div><p className="eyebrow">OCR SCANNER · v1.3.1</p><h2 id="scanner-title">IndianOil slip scan</h2></div>
           <button type="button" className="scanner-close" disabled={busy} onClick={close}>✕</button>
         </div>
 
