@@ -14,19 +14,13 @@ const productMap: Record<Mode, Fuel[]> = {
   mixed: ['MS','HSD','MS','HSD']
 }
 const sampleReadings: Record<Mode, Reading[]> = {
-  allHsd: [
-    {evening:'1100',morning:'1000'}, {evening:'2120',morning:'2000'},
-    {evening:'3080',morning:'3000'}, {evening:'4110',morning:'4000'}
-  ],
-  mixed: [
-    {evening:'5060',morning:'5000'}, {evening:'6090',morning:'6000'},
-    {evening:'7070',morning:'7000'}, {evening:'8100',morning:'8000'}
-  ]
+  allHsd: Array.from({length:4},()=>({evening:'0',morning:'0'})),
+  mixed: Array.from({length:4},()=>({evening:'0',morning:'0'}))
 }
 const emptyPayments: Payments = {udhari:'0',paytm:'0',fcard:'0',phonepe:'0',bank:'0',kharche:'0',cash:'0',other:'0'}
 const initialDraft = (): Draft => ({
   mode:'allHsd', date:new Date().toISOString().slice(0,10), note:'',
-  readings: structuredClone(sampleReadings), hsdTesting:'0', hsdRate:'95.50', msTesting:'0', msRate:'102.01', extra:'0', payments:{...emptyPayments}
+  readings: structuredClone(sampleReadings), hsdTesting:'0', hsdRate:'0', msTesting:'0', msRate:'0', extra:'0', payments:{...emptyPayments}
 })
 const num = (v:string) => Number.isFinite(Number.parseFloat(v)) ? Number.parseFloat(v) : 0
 const inr = new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',minimumFractionDigits:2,maximumFractionDigits:2})
@@ -38,7 +32,7 @@ function Field({label,value,onChange,step='0.01',placeholder,type='number'}:{lab
 
 export default function App(){
   const [draft,setDraft] = useState<Draft>(()=>{
-    try { const saved=localStorage.getItem('pump-book-draft'); return saved ? {...initialDraft(),...JSON.parse(saved)} : initialDraft() } catch { return initialDraft() }
+    try { const saved=localStorage.getItem('pump-book-draft-v2'); return saved ? {...initialDraft(),...JSON.parse(saved)} : initialDraft() } catch { return initialDraft() }
   })
   const [saved,setSaved] = useState(false)
   const [showInstall,setShowInstall] = useState(false)
@@ -59,7 +53,7 @@ export default function App(){
     return {...d,readings}
   })
   const updatePayment=(key:keyof Payments,value:string)=>setDraft(d=>({...d,payments:{...d.payments,[key]:value}}))
-  const save=()=>{localStorage.setItem('pump-book-draft',JSON.stringify(draft));setSaved(true);setTimeout(()=>setSaved(false),1400)}
+  const save=()=>{localStorage.setItem('pump-book-draft-v2',JSON.stringify(draft));setSaved(true);setTimeout(()=>setSaved(false),1400)}
   const reset=()=>setDraft(d=>({...initialDraft(),mode:d.mode,date:d.date,note:d.note,readings:{...initialDraft().readings,[d.mode]:structuredClone(sampleReadings[d.mode])}}))
 
   return <div className="shell">
