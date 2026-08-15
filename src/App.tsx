@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReceiptScanner from './ReceiptScanner'
+import BrandMascot from './BrandMascot'
 import type { ReadingSlot } from './receiptOcr'
 
 type Fuel = 'HSD' | 'MS'
@@ -166,12 +167,27 @@ export default function App() {
       <div className="print-head">Pump Book — Day Report<span>{draft.date}{draft.note ? ` · ${draft.note}` : ''}</span></div>
 
       <header className="hero">
-        <div className="brand"><div className="brand-mark">PB</div><div><strong>Pump Book</strong><span>One-day totalizer &amp; payment reconciliation</span></div></div>
+        <div className="hero-orb orb-one"/><div className="hero-orb orb-two"/>
+        <div className="hero-top">
+          <div className="brand">
+            <div className="brand-mascot"><BrandMascot /></div>
+            <div className="brand-copy"><span className="brand-kicker">SMART PETROL PUMP LEDGER</span><strong>Pump <em>Book</em></strong><span>Scan readings. Match every rupee.</span></div>
+          </div>
+          <div className="brand-status"><span className="live-dot"/>Auto-save on</div>
+        </div>
+        <div className="hero-chips"><span>✦ Smart OCR</span><span>⌁ Offline-ready</span><span>♢ Private on device</span></div>
         <div className="hero-row">
-          <Field label="Date" value={draft.date} type="date" onChange={date => setDraft(d => ({ ...d, date }))} />
-          <label className="field-label"><span>Machine / Staff note</span><input value={draft.note} placeholder="e.g. M1 / Ramesh" onChange={e => setDraft(d => ({ ...d, note: e.target.value }))} /></label>
+          <Field label="Working date" value={draft.date} type="date" onChange={date => setDraft(d => ({ ...d, date }))} />
+          <label className="field-label"><span>Machine / Staff note</span><input value={draft.note} placeholder="M1 · Ramesh" onChange={e => setDraft(d => ({ ...d, note: e.target.value }))} /></label>
         </div>
       </header>
+
+      <div className="journey" aria-label="Daily closing workflow">
+        <div className="journey-step active"><i>01</i><span><b>Scan</b><small>Readings</small></span></div>
+        <div className="journey-line"/><div className="journey-step"><i>02</i><span><b>Set</b><small>Rates</small></span></div>
+        <div className="journey-line"/><div className="journey-step"><i>03</i><span><b>Review</b><small>Sale</small></span></div>
+        <div className="journey-line"/><div className="journey-step"><i>04</i><span><b>Match</b><small>Cash</small></span></div>
+      </div>
 
       <nav className="mode-tabs" aria-label="Calculation mode">
         <button className={draft.mode === 'allHsd' ? 'active' : ''} onClick={() => setDraft(d => ({ ...d, mode: 'allHsd' }))}><b>Mode 1</b><span>HSD · HSD · HSD · HSD</span></button>
@@ -180,9 +196,9 @@ export default function App() {
 
       <main>
         <section className="card">
-          <div className="section-head"><div><p className="eyebrow">Step 1</p><h2>Totalizer readings</h2></div><div className="section-tools"><span className="help">सुबह + शाम की slips scan करें · कुल 8 readings</span><ReceiptScanner onApply={applyScannedReadings} /></div></div>
+          <div className="section-head"><div className="section-title"><span className="section-icon scan-icon">⌗</span><div><p className="eyebrow">Step 01 · Capture</p><h2>Totalizer readings</h2><p className="section-sub">सुबह + शाम की slips से 8 readings</p></div></div><div className="section-tools"><ReceiptScanner onApply={applyScannedReadings} /></div></div>
           <div className="totalizer-grid">{map.map((fuel, i) => <article className="totalizer" key={`${draft.mode}-${i}`}>
-            <div className="totalizer-head"><b>T{i + 1}</b><span className={`fuel ${fuel.toLowerCase()}`}>{fuel}</span></div>
+            <div className="totalizer-head"><b><small>Nozzle</small>T{i + 1}</b><span className={`fuel ${fuel.toLowerCase()}`}>{fuel}</span></div>
             <Field label="Evening / Closing" value={draft.readings[draft.mode][i].evening} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'evening', v)} />
             <Field label="Morning / Opening" value={draft.readings[draft.mode][i].morning} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'morning', v)} />
             <div className={`difference ${diffs[i] < 0 ? 'bad' : ''}`}><span>Difference</span><strong>{qty(diffs[i])}</strong></div>
@@ -232,7 +248,7 @@ export default function App() {
         </section>
 
         <section className="card">
-          <div className="section-head"><div><p className="eyebrow">Step 4</p><h2>Payment, udhari &amp; cash</h2></div><span className="help">Sale reconciliation</span></div>
+          <div className="section-head"><div className="section-title"><span className="section-icon wallet-icon">▣</span><div><p className="eyebrow">Step 04 · Reconcile</p><h2>Payment, udhari &amp; cash</h2><p className="section-sub">Sale का पूरा मिलान</p></div></div><span className="soft-badge">Final step</span></div>
           <div className="payment-grid">
             {(Object.entries({ udhari: 'Total Udhari', paytm: 'Total Paytm', fcard: 'Total F-Card', phonepe: 'Total PhonePe', bank: 'Bank / Other', kharche: 'Total Kharche', cash: 'Total Cash', other: 'Other adjustment' }) as [keyof Payments, string][]).map(([key, label]) => <Field key={key} label={label} value={draft.payments[key]} placeholder="0" onChange={v => updatePayment(key, v)} />)}
           </div>
@@ -254,7 +270,7 @@ export default function App() {
         </div>
         {!standalone && !installEvt && <p className="install-note">PWA ready: browser menu से “Add to Home Screen” चुनकर app install करें।</p>}
       </main>
-      <footer>Pump Book · Data आपके device पर local रहता है · Auto-save on</footer>
+      <footer><BrandMascot compact/><div><b>Pump Book</b><span>Built for faster, safer daily closing · Data आपके device पर रहता है</span></div></footer>
     </div>
 
   </>

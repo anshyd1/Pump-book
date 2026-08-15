@@ -4,8 +4,16 @@ Professional React + TypeScript progressive web app for one-day fuel totalizer a
 
 Live: https://anshyd1.github.io/Pump-book/
 
+## Pump Book 2.0
+
+A complete visual and scanning upgrade with the new **Pumpu** mascot, petrol-pump brand system, animated Pump Vision scanner, responsive workflow navigation and refreshed PWA icons.
+
 ## Features
 
+- **Pump Vision OCR 2.0** — fast fixed-layout pass + high-contrast thermal-print recovery + layout-independent document OCR
+- Smart fallback handles zoomed, lightly rotated (±3°), faint and imperfectly framed slips; `rotateAuto` also checks orientation
+- Animated scanner frame, laser sweep, progress stages, confidence score and editable verification
+- Pumpu mascot, branded app header, new green/amber fuel theme and four-step daily closing journey
 - Mode 1: HSD / HSD / HSD / HSD · Mode 2: MS / HSD / MS / HSD
 - Evening minus Morning live totalizer differences
 - Testing deductions and editable HSD/MS rates

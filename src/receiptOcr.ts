@@ -1,148 +1,146 @@
 import { createWorker, PSM } from 'tesseract.js'
 
 export type ReadingSlot = 'morning' | 'evening'
+export type ScanResult = { readings: string[]; confidence: number; rawText: string; slipTime: string; suggestedSlot: ReadingSlot | null }
 
-export type ScanResult = {
-  readings: string[]
-  confidence: number
-  rawText: string
-  slipTime: string
-  suggestedSlot: ReadingSlot | null
-}
+type LoadedImage = { width: number; height: number; image: HTMLImageElement }
 
-const cleanNumber = (value: string): string => {
+const numberFrom = (value: string): string => {
   const fixed = value.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/,/g, '.').replace(/\s+/g, '')
-  const match = fixed.match(/(\d{4,9})\.(\d{3})/)
-  if (!match) return ''
-  const result = `${match[1]}.${match[2]}`
-  const amount = Number(result)
-  // Pump totalizer litres; CumSale जैसी बहुत बड़ी रकम को reject करें।
-  return amount >= 10_000 && amount < 10_000_000 ? result : ''
+  for (const match of fixed.matchAll(/(\d{4,9})\.(\d{3})/g)) {
+    const result = `${match[1]}.${match[2]}`
+    const amount = Number(result)
+    if (amount >= 10_000 && amount < 10_000_000) return result
+  }
+  return ''
 }
 
-const loadImage = (file: File): Promise<{ width: number; height: number; image: HTMLImageElement }> => new Promise((resolve, reject) => {
+const loadImage = (file: File): Promise<LoadedImage> => new Promise((resolve, reject) => {
   const url = URL.createObjectURL(file)
   const image = new Image()
-  image.onload = () => {
-    URL.revokeObjectURL(url)
-    resolve({ width: image.naturalWidth, height: image.naturalHeight, image })
-  }
-  image.onerror = () => {
-    URL.revokeObjectURL(url)
-    reject(new Error('Image load failed'))
-  }
+  image.onload = () => { URL.revokeObjectURL(url); resolve({ width: image.naturalWidth, height: image.naturalHeight, image }) }
+  image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')) }
   image.src = url
 })
 
-const makeT1HighContrastCrop = (image: HTMLImageElement, width: number, height: number): HTMLCanvasElement => {
-  const sx = Math.round(width * 0.325)
-  const sy = Math.round(height * 0.266)
-  const sw = Math.round(width * 0.39)
-  const sh = Math.round(height * 0.035)
+const thresholdCrop = (image: HTMLImageElement, width: number, height: number, threshold = 130): HTMLCanvasElement => {
+  const sx = Math.round(width * 0.315), sy = Math.round(height * 0.255)
+  const sw = Math.round(width * 0.42), sh = Math.round(height * 0.058)
   const canvas = document.createElement('canvas')
-  canvas.width = sw * 2
-  canvas.height = sh * 2
+  canvas.width = Math.min(2600, sw * 2); canvas.height = Math.round(sh * (canvas.width / sw))
   const context = canvas.getContext('2d', { willReadFrequently: true })!
   context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
   for (let i = 0; i < pixels.data.length; i += 4) {
-    const luminance = pixels.data[i] * 0.299 + pixels.data[i + 1] * 0.587 + pixels.data[i + 2] * 0.114
-    const value = luminance > 130 ? 255 : 0
-    pixels.data[i] = value
-    pixels.data[i + 1] = value
-    pixels.data[i + 2] = value
+    const lum = pixels.data[i] * .299 + pixels.data[i + 1] * .587 + pixels.data[i + 2] * .114
+    const v = lum > threshold ? 255 : 0
+    pixels.data[i] = v; pixels.data[i + 1] = v; pixels.data[i + 2] = v
   }
   context.putImageData(pixels, 0, 0)
   return canvas
 }
 
-// IndianOil की 4-nozzle slip में CumVolume values एक fixed vertical order में होती हैं।
-// पूरी photo का slow/free-form OCR करने के बजाय केवल चार पतली reading lines scan होती हैं।
+const documentCanvas = ({ image, width, height }: LoadedImage, angle = 0): HTMLCanvasElement => {
+  const scale = Math.min(1, 1800 / Math.max(width, height))
+  const w = Math.round(width * scale), h = Math.round(height * scale)
+  const radians = angle * Math.PI / 180
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.ceil(Math.abs(w * Math.cos(radians)) + Math.abs(h * Math.sin(radians)))
+  canvas.height = Math.ceil(Math.abs(h * Math.cos(radians)) + Math.abs(w * Math.sin(radians)))
+  const context = canvas.getContext('2d')!
+  context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height)
+  context.translate(canvas.width / 2, canvas.height / 2); context.rotate(radians)
+  context.filter = 'grayscale(1) contrast(1.35)'
+  context.drawImage(image, -w / 2, -h / 2, w, h)
+  return canvas
+}
+
+const markerRegex = /no\s*[z2]\s*[z2]\s*l\s*e\s*n\s*[o0]\s*([0-9oOIl|zZsS])/gi
+const labelRegex = /c\s*[uoy]\s*m\s*v\s*[o0]\s*l\s*[uoy]\s*m\s*[eoc]?\s*:?/gi
+
+const markerNumber = (char: string) => Number(char.replace(/[oO]/g, '0').replace(/[Il|]/g, '1').replace(/[zZ]/g, '2').replace(/[sS]/g, '5'))
+
+export function parseDocumentText(raw: string): string[] {
+  const text = raw.replace(/\r/g, '')
+  const markers = Array.from(text.matchAll(markerRegex)).map(match => ({ nozzle: markerNumber(match[1]), index: match.index! })).filter(item => item.nozzle >= 1 && item.nozzle <= 4)
+  const result = ['', '', '', '']
+
+  if (markers.length) {
+    const firstTwo = markers.find(item => item.nozzle === 2)
+    if (!markers.some(item => item.nozzle === 1) && firstTwo) markers.unshift({ nozzle: 1, index: 0 })
+    markers.forEach((marker, index) => {
+      const section = text.slice(marker.index, markers[index + 1]?.index ?? text.length)
+      for (const label of section.matchAll(labelRegex)) {
+        const tail = section.slice(label.index! + label[0].length, label.index! + label[0].length + 100)
+        const value = numberFrom(tail)
+        if (value) { result[marker.nozzle - 1] = value; break }
+      }
+    })
+  }
+
+  // Zoom/crop में nozzle heading कट सकती है; visible CumVolume labels को order में use करें।
+  const ordered: string[] = []
+  for (const label of text.matchAll(labelRegex)) {
+    const value = numberFrom(text.slice(label.index! + label[0].length, label.index! + label[0].length + 100))
+    if (value) ordered.push(value)
+  }
+  if (!markers.length && ordered.length) ordered.slice(0, 4).forEach((value, index) => { result[index] = value })
+  return result
+}
+
 const LINE_TOP_RATIOS = [0.2734, 0.4785, 0.7080, 0.9717]
 
 export async function scanReceipt(file: File, onProgress: (progress: number, status: string) => void): Promise<ScanResult> {
-  const { width, height, image } = await loadImage(file)
+  const loaded = await loadImage(file)
+  const { width, height } = loaded
   let completed = 0
-  const worker = await createWorker('eng', 1, {
-    logger: message => {
-      if (message.status === 'recognizing text') onProgress((completed + message.progress) / 4, message.status)
-      else onProgress(0, message.status)
-    }
-  })
+  const worker = await createWorker('eng', 1, { logger: message => {
+    if (message.status === 'recognizing text') onProgress(Math.min(.96, (completed + message.progress) / 5), 'recognizing text')
+    else onProgress(0, message.status)
+  } })
+  const readings = ['', '', '', ''], texts: string[] = []
 
-  const readings = ['', '', '', '']
-  const texts: string[] = []
   try {
-    await worker.setParameters({
-      tessedit_pageseg_mode: PSM.SINGLE_LINE,
-      tessedit_char_whitelist: '0123456789.,',
-      user_defined_dpi: '300'
-    })
-
+    // Pass 1: fast fixed-layout scan for a full IndianOil slip.
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,', user_defined_dpi: '300' })
     for (let index = 0; index < 4; index += 1) {
       const top = Math.min(height - 1, Math.max(0, Math.round(height * LINE_TOP_RATIOS[index])))
-      const rectangle = {
-        left: Math.round(width * 0.30),
-        top,
-        width: Math.round(width * 0.55),
-        height: Math.max(50, Math.min(height - top, Math.round(height * 0.020)))
-      }
-      const { data } = await worker.recognize(file, { rectangle })
-      texts[index] = data.text
-      readings[index] = cleanNumber(data.text)
-      completed = index + 1
-      onProgress(completed / 4, 'recognizing text')
+      const { data } = await worker.recognize(file, { rectangle: {
+        left: Math.round(width * .30), top, width: Math.round(width * .55),
+        height: Math.max(50, Math.min(height - top, Math.round(height * .020)))
+      } })
+      texts[index] = `Fast T${index + 1}: ${data.text}`; readings[index] = numberFrom(data.text)
+      completed = index + 1; onProgress(completed / 5, 'recognizing text')
     }
 
-    // यदि framing थोड़ा ऊपर/नीचे हो तो missing line पर एक wider fallback scan करें।
+    // Pass 2: high-contrast T1 handles faint thermal print.
+    if (!readings[0]) {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
+      for (const threshold of [130, 150]) {
+        const { data } = await worker.recognize(thresholdCrop(loaded.image, width, height, threshold))
+        texts.push(`T1 contrast ${threshold}: ${data.text}`)
+        readings[0] = numberFrom(data.text)
+        if (readings[0]) break
+      }
+    }
+
+    // Pass 3: layout-independent OCR handles zoom, rotation and imperfect framing.
     if (readings.some(value => !value)) {
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
-      for (let index = 0; index < 4; index += 1) {
-        if (readings[index]) continue
-        const top = Math.max(0, Math.round(height * (LINE_TOP_RATIOS[index] - 0.018)))
-        const rectangle = {
-          left: Math.round(width * 0.30),
-          top,
-          width: Math.round(width * 0.48),
-          height: Math.max(100, Math.min(height - top, Math.round(height * 0.055)))
-        }
-        const { data } = await worker.recognize(file, { rectangle })
-        texts[index] += `\n${data.text}`
-        readings[index] = cleanNumber(data.text)
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO, tessedit_char_whitelist: '', preserve_interword_spaces: '1' })
+      for (const angle of [0, -3, 3]) {
+        const { data } = await worker.recognize(documentCanvas(loaded, angle), { rotateAuto: true })
+        texts.push(`Smart document ${angle}°:\n${data.text}`)
+        const found = parseDocumentText(data.text)
+        found.forEach((value, index) => { if (!readings[index] && value) readings[index] = value })
+        if (readings.every(Boolean)) break
       }
     }
 
-    // T1 हल्का और तिरछा है: crop को 2x करके black/white threshold OCR करें।
-    if (!readings[0]) {
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
-      const crop = makeT1HighContrastCrop(image, width, height)
-      const { data } = await worker.recognize(crop)
-      texts[0] += `\nT1 high-contrast retry:\n${data.text}`
-      readings[0] = cleanNumber(data.text)
-    }
-
-    // अंतिम raw focused retry—अलग camera processing वाले phones के लिए।
-    if (!readings[0]) {
-      const top = Math.max(0, Math.round(height * 0.266))
-      const { data } = await worker.recognize(file, {
-        rectangle: {
-          left: Math.round(width * 0.325), top,
-          width: Math.round(width * 0.39),
-          height: Math.max(90, Math.min(height - top, Math.round(height * 0.035)))
-        }
-      })
-      texts[0] += `\nT1 raw retry:\n${data.text}`
-      readings[0] = cleanNumber(data.text)
-    }
-
+    onProgress(1, 'recognizing text')
     return {
       readings,
       confidence: readings.filter(Boolean).length * 25,
-      rawText: texts.map((text, index) => `T${index + 1}: ${text.trim() || 'not found'}`).join('\n'),
-      slipTime: '',
-      suggestedSlot: null
+      rawText: texts.join('\n'), slipTime: '', suggestedSlot: null
     }
-  } finally {
-    await worker.terminate()
-  }
+  } finally { await worker.terminate() }
 }

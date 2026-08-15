@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { scanReceipt } from './receiptOcr'
+import BrandMascot from './BrandMascot'
 import type { ReadingSlot } from './receiptOcr'
 
 type Props = {
@@ -75,27 +76,28 @@ export default function ReceiptScanner({ onApply }: Props) {
     <div className="scan-actions">
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={handleFile} />
       <input ref={galleryRef} type="file" accept="image/*" hidden onChange={handleFile} />
-      <button type="button" className="scan-btn" onClick={() => cameraRef.current?.click()}>▣ Scan slip</button>
-      <button type="button" className="scan-gallery" title="Gallery की slip scan करें" aria-label="Gallery की slip scan करें" onClick={() => galleryRef.current?.click()}>🖼</button>
+      <button type="button" className="scan-btn" onClick={() => cameraRef.current?.click()}><span className="scan-btn-icon">⌗</span><span>Smart Scan<small>Camera</small></span><i>→</i></button>
+      <button type="button" className="scan-gallery" title="Gallery की slip scan करें" aria-label="Gallery की slip scan करें" onClick={() => galleryRef.current?.click()}><span>▧</span><small>Upload</small></button>
     </div>
 
     {open && <div className="scanner-backdrop" role="presentation" onClick={close}>
       <section className="scanner-modal" role="dialog" aria-modal="true" aria-labelledby="scanner-title" onClick={event => event.stopPropagation()}>
         <div className="scanner-head">
-          <div><p className="eyebrow">OCR SCANNER · v1.3.1</p><h2 id="scanner-title">IndianOil slip scan</h2></div>
+          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · SMART OCR 2.0</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
           <button type="button" className="scanner-close" disabled={busy} onClick={close}>✕</button>
         </div>
 
         <div className="scanner-body">
-          {preview && <img className="scanner-preview" src={preview} alt="Scan की गई pump slip" />}
+          {preview && <div className={`scanner-visual ${busy ? 'scanning' : ''}`}><img className="scanner-preview" src={preview} alt="Scan की गई pump slip"/><div className="scan-corners"><i/><i/><i/><i/></div><div className="scanner-laser"/><span className="visual-badge">AUTO FRAME</span></div>}
           <div className="scanner-result">
             {busy ? <div className="scan-progress" role="status">
-              <div className="spinner">PB</div>
-              <strong>{status}</strong>
+              <div className="scanner-mascot"><BrandMascot scanning/></div>
+              <div><strong>{status}</strong><p>Photo को साफ करके numbers खोज रहे हैं</p></div>
               <div className="progress-track"><span style={{ width: `${Math.max(4, progress)}%` }} /></div>
-              <span>{progress}% · पहली बार OCR data download होने में थोड़ा समय लग सकता है</span>
+              <div className="scan-stages"><span className={progress > 5 ? 'done' : 'active'}>Enhance</span><span className={progress > 30 ? 'done' : ''}>Deskew</span><span className={progress > 60 ? 'done' : ''}>Read</span><span className={progress >= 100 ? 'done' : ''}>Verify</span></div>
+              <small>{progress}% · पहली scan पर OCR engine download हो सकता है</small>
             </div> : <>
-              <div className="scan-result-head"><strong>मिली हुई CumVolume readings</strong>{confidence !== null && <span>OCR {confidence}%</span>}</div>
+              <div className="scan-result-head"><div><span className="result-kicker">SCAN COMPLETE</span><strong>CumVolume readings</strong></div>{confidence !== null && <span className={`confidence ${confidence === 100 ? 'perfect' : ''}`}><b>{confidence}%</b><small>confidence</small></span>}</div>
               <div className="slot-picker">
                 <div><strong>किस समय की slip?</strong><span>सही जगह भरने के लिए सुबह या शाम चुनें</span></div>
                 <div className="slot-buttons">
