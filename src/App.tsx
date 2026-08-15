@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 
 type Fuel = 'HSD' | 'MS'
 type Mode = 'allHsd' | 'mixed'
-type Reading = { evening: string; morning: string }
+type Reading = { evening: string; morning: string; photo: string }
 type Payments = { udhari: string; paytm: string; fcard: string; phonepe: string; bank: string; kharche: string; cash: string; other: string }
 type Draft = {
   mode: Mode; date: string; note: string; readings: Record<Mode, Reading[]>
@@ -15,8 +16,8 @@ const productMap: Record<Mode, Fuel[]> = {
   mixed: ['MS', 'HSD', 'MS', 'HSD']
 }
 const sampleReadings: Record<Mode, Reading[]> = {
-  allHsd: Array.from({ length: 4 }, () => ({ evening: '', morning: '' })),
-  mixed: Array.from({ length: 4 }, () => ({ evening: '', morning: '' }))
+  allHsd: Array.from({ length: 4 }, () => ({ evening: '', morning: '', photo: '' })),
+  mixed: Array.from({ length: 4 }, () => ({ evening: '', morning: '', photo: '' }))
 }
 const emptyPayments: Payments = { udhari: '', paytm: '', fcard: '', phonepe: '', bank: '', kharche: '', cash: '', other: '' }
 const localDate = () => {
@@ -42,7 +43,8 @@ const sanitize = (raw: unknown): Draft => {
     const arr = r.readings?.[m]
     d.readings[m] = Array.from({ length: 4 }, (_, i) => ({
       evening: clean(arr?.[i]?.evening),
-      morning: clean(arr?.[i]?.morning)
+      morning: clean(arr?.[i]?.morning),
+      photo: typeof arr?.[i]?.photo === 'string' && arr[i].photo.startsWith('data:image/') ? arr[i].photo : ''
     }))
   }
   d.hsdTesting = clean(r.hsdTesting); d.hsdRate = clean(r.hsdRate)
@@ -70,6 +72,43 @@ function Field({ label, value, onChange, step = '0.01', placeholder, type = 'num
   </label>
 }
 
+function CameraButtons({ onPhoto }: { onPhoto: (dataUrl: string) => void }) {
+  const camRef = useRef<HTMLInputElement>(null)
+  const galRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f || !f.type.startsWith('image/')) return
+    setBusy(true)
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        // Compress karke chhota banao — phone ki photo 3-4 MB hoti hai, storage ke liye 1000px tak resize
+        const MAX = 1000
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+        const c = document.createElement('canvas')
+        c.width = Math.max(1, Math.round(img.width * scale))
+        c.height = Math.max(1, Math.round(img.height * scale))
+        c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
+        onPhoto(c.toDataURL('image/jpeg', 0.72))
+        setBusy(false)
+      }
+      img.onerror = () => setBusy(false)
+      img.src = String(reader.result)
+    }
+    reader.onerror = () => setBusy(false)
+    reader.readAsDataURL(f)
+  }
+  return <div className="cam-actions">
+    <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={handleFile} />
+    <input ref={galRef} type="file" accept="image/*" hidden onChange={handleFile} />
+    <button type="button" className="cam-btn" disabled={busy} title="Camera se photo lo" aria-label="Camera se reading photo lo" onClick={() => camRef.current?.click()}>{busy ? '…' : '📷'}</button>
+    <button type="button" className="gal-btn" disabled={busy} title="Gallery se photo chuno" aria-label="Gallery se photo upload karo" onClick={() => galRef.current?.click()}>🖼</button>
+  </div>
+}
+
 export default function App() {
   const STORAGE_KEY = 'pump-book-draft-v3'
   const [draft, setDraft] = useState<Draft>(() => {
@@ -81,8 +120,10 @@ export default function App() {
     } catch { return initialDraft() }
   })
   const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null)
   const [standalone, setStandalone] = useState(false)
+  const [lightbox, setLightbox] = useState<{ photo: string; label: string } | null>(null)
   const map = productMap[draft.mode]
   const fuels = useMemo(() => Array.from(new Set(map)), [map])
   const diffs = useMemo(() => draft.readings[draft.mode].map(r => num(r.evening) - num(r.morning)), [draft.readings, draft.mode])
@@ -101,7 +142,12 @@ export default function App() {
   useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return }
     const t = setTimeout(() => {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(draft)) } catch { /* storage full — ignore */ }
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(draft))
+        setSaveError(null)
+      } catch {
+        setSaveError('⚠ Storage full ho gaya — kuch photos delete karke data chhota karo')
+      }
       setSavedAt(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }))
     }, 600)
     return () => clearTimeout(t)
@@ -120,6 +166,15 @@ export default function App() {
     const choice = await installEvt.userChoice
     if (choice.outcome === 'accepted') setInstallEvt(null)
   }
+
+  // Photo lightbox — Escape + scroll lock
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => { document.body.style.overflow = ''; window.removeEventListener('keydown', onKey) }
+  }, [lightbox])
 
   const updateReading = (index: number, key: keyof Reading, value: string) => setDraft(d => {
     const readings = { ...d.readings, [d.mode]: d.readings[d.mode].map((r, i) => i === index ? { ...r, [key]: value } : r) }
@@ -141,98 +196,119 @@ export default function App() {
   const amountParts = fuels.map(f => inr.format(fuelAmount(f)))
   const extraStr = extraNum > 0 ? ` + ${inr.format(extraNum)}` : extraNum < 0 ? ` − ${inr.format(Math.abs(extraNum))}` : ''
 
-  return <div className="shell">
-    <div className="print-head">Pump Book — Day Report<span>{draft.date}{draft.note ? ` · ${draft.note}` : ''}</span></div>
+  return <>
+    <div className="shell">
+      <div className="print-head">Pump Book — Day Report<span>{draft.date}{draft.note ? ` · ${draft.note}` : ''}</span></div>
 
-    <header className="hero">
-      <div className="brand"><div className="brand-mark">PB</div><div><strong>Pump Book</strong><span>One-day totalizer &amp; payment reconciliation</span></div></div>
-      <div className="hero-row">
-        <Field label="Date" value={draft.date} type="date" onChange={date => setDraft(d => ({ ...d, date }))} />
-        <label className="field-label"><span>Machine / Staff note</span><input value={draft.note} placeholder="e.g. M1 / Ramesh" onChange={e => setDraft(d => ({ ...d, note: e.target.value }))} /></label>
-      </div>
-    </header>
-
-    <nav className="mode-tabs" aria-label="Calculation mode">
-      <button className={draft.mode === 'allHsd' ? 'active' : ''} onClick={() => setDraft(d => ({ ...d, mode: 'allHsd' }))}><b>Mode 1</b><span>HSD · HSD · HSD · HSD</span></button>
-      <button className={draft.mode === 'mixed' ? 'active' : ''} onClick={() => setDraft(d => ({ ...d, mode: 'mixed' }))}><b>Mode 2</b><span>MS · HSD · MS · HSD</span></button>
-    </nav>
-
-    <main>
-      <section className="card">
-        <div className="section-head"><div><p className="eyebrow">Step 1</p><h2>Totalizer readings</h2></div><span className="help">Evening − Morning · fields blank hain, seedha type karo</span></div>
-        <div className="totalizer-grid">{map.map((fuel, i) => <article className="totalizer" key={`${draft.mode}-${i}`}>
-          <div className="totalizer-head"><b>T{i + 1}</b><span className={`fuel ${fuel.toLowerCase()}`}>{fuel}</span></div>
-          <Field label="Evening / Closing" value={draft.readings[draft.mode][i].evening} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'evening', v)} />
-          <Field label="Morning / Opening" value={draft.readings[draft.mode][i].morning} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'morning', v)} />
-          <div className={`difference ${diffs[i] < 0 ? 'bad' : ''}`}><span>Difference</span><strong>{qty(diffs[i])}</strong></div>
-        </article>)}</div>
-        {hasNegative && <div className="alert">Negative difference मिला है—Evening और Morning reading check करें।</div>}
-      </section>
-
-      <section className="card">
-        <div className="section-head"><div><p className="eyebrow">Step 2</p><h2>Testing &amp; editable rates</h2></div><span className="help">Yellow fields editable</span></div>
-        <div className="settings-grid">
-          <div className="setting hsd"><h3>HSD settings</h3><div className="two"><Field label="Testing qty" value={draft.hsdTesting} step="0.001" placeholder="0.000" onChange={hsdTesting => setDraft(d => ({ ...d, hsdTesting }))} /><Field label="Rate (₹/L)" value={draft.hsdRate} placeholder="e.g. 92.50" onChange={hsdRate => setDraft(d => ({ ...d, hsdRate }))} /></div></div>
-          {draft.mode === 'mixed' && <div className="setting ms"><h3>MS settings</h3><div className="two"><Field label="Testing qty" value={draft.msTesting} step="0.001" placeholder="0.000" onChange={msTesting => setDraft(d => ({ ...d, msTesting }))} /><Field label="Rate (₹/L)" value={draft.msRate} placeholder="e.g. 105.00" onChange={msRate => setDraft(d => ({ ...d, msRate }))} /></div></div>}
-          <div className="setting extra"><h3>Extra adjustment</h3><Field label="Plus (+) / Minus (−)" value={draft.extra} placeholder="+ / −" onChange={extra => setDraft(d => ({ ...d, extra }))} /></div>
+      <header className="hero">
+        <div className="brand"><div className="brand-mark">PB</div><div><strong>Pump Book</strong><span>One-day totalizer &amp; payment reconciliation</span></div></div>
+        <div className="hero-row">
+          <Field label="Date" value={draft.date} type="date" onChange={date => setDraft(d => ({ ...d, date }))} />
+          <label className="field-label"><span>Machine / Staff note</span><input value={draft.note} placeholder="e.g. M1 / Ramesh" onChange={e => setDraft(d => ({ ...d, note: e.target.value }))} /></label>
         </div>
-      </section>
+      </header>
 
-      <section className="card">
-        <div className="section-head"><div><p className="eyebrow">Step 3</p><h2>Fuel sale summary</h2></div><span className="help">Live calculation</span></div>
-        <div className="summary-grid">
-          <ProductSummary fuel="HSD" gross={gross.HSD} testing={num(draft.hsdTesting)} net={hsdNet} rate={num(draft.hsdRate)} amount={hsdAmount} />
-          {draft.mode === 'mixed' && <ProductSummary fuel="MS" gross={gross.MS} testing={num(draft.msTesting)} net={msNet} rate={num(draft.msRate)} amount={msAmount} />}
-        </div>
-        <div className="sale-total"><div><span>FINAL FUEL SALE</span><strong>{inr.format(finalSale)}</strong></div><span className="pill">Calculated</span></div>
+      <nav className="mode-tabs" aria-label="Calculation mode">
+        <button className={draft.mode === 'allHsd' ? 'active' : ''} onClick={() => setDraft(d => ({ ...d, mode: 'allHsd' }))}><b>Mode 1</b><span>HSD · HSD · HSD · HSD</span></button>
+        <button className={draft.mode === 'mixed' ? 'active' : ''} onClick={() => setDraft(d => ({ ...d, mode: 'mixed' }))}><b>Mode 2</b><span>MS · HSD · MS · HSD</span></button>
+      </nav>
 
-        <div className="calc-block">
-          <h3>Full calculation — पूरा हिसाब</h3>
-          <div className="calc-wrap">
-            <table className="calc-table">
-              <thead><tr><th>Fuel</th><th>Total qty (कुल)</th><th>Testing</th><th>Net qty</th><th>Rate (रेट)</th><th>Amount (रकम)</th></tr></thead>
-              <tbody>{fuels.map(f => <tr key={f}>
-                <td><span className={`fuel ${f.toLowerCase()}`}>{f}</span></td>
-                <td>{qty(fuelGross(f))}</td>
-                <td>{qty(fuelTest(f))}</td>
-                <td>{qty(fuelNet(f))}</td>
-                <td>{inr.format(fuelRate(f))}</td>
-                <td>{inr.format(fuelAmount(f))}</td>
-              </tr>)}</tbody>
-            </table>
+      <main>
+        <section className="card">
+          <div className="section-head"><div><p className="eyebrow">Step 1</p><h2>Totalizer readings</h2></div><span className="help">📷 se photo lo · Evening − Morning</span></div>
+          <div className="totalizer-grid">{map.map((fuel, i) => <article className="totalizer" key={`${draft.mode}-${i}`}>
+            <div className="totalizer-head"><b>T{i + 1}</b><span className={`fuel ${fuel.toLowerCase()}`}>{fuel}</span><CameraButtons onPhoto={dataUrl => updateReading(i, 'photo', dataUrl)} /></div>
+            <Field label="Evening / Closing" value={draft.readings[draft.mode][i].evening} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'evening', v)} />
+            <Field label="Morning / Opening" value={draft.readings[draft.mode][i].morning} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'morning', v)} />
+            <div className={`difference ${diffs[i] < 0 ? 'bad' : ''}`}><span>Difference</span><strong>{qty(diffs[i])}</strong></div>
+            {draft.readings[draft.mode][i].photo
+              ? <div className="photo-preview">
+                <button type="button" className="photo-thumb" title="Photo bada dekhne ke liye tap karo" onClick={() => setLightbox({ photo: draft.readings[draft.mode][i].photo, label: `${fuel} T${i + 1} reading photo` })}>
+                  <img src={draft.readings[draft.mode][i].photo} alt={`${fuel} T${i + 1} reading`} />
+                  <span className="photo-zoom">🔍</span>
+                </button>
+                <button type="button" className="photo-del" onClick={() => updateReading(i, 'photo', '')}>✕ Photo हटाओ</button>
+              </div>
+              : <p className="photo-note">📷 = camera se reading photo lo · 🖼 = gallery se chuno</p>}
+          </article>)}</div>
+          {hasNegative && <div className="alert">Negative difference मिला है—Evening और Morning reading check करें।</div>}
+        </section>
+
+        <section className="card">
+          <div className="section-head"><div><p className="eyebrow">Step 2</p><h2>Testing &amp; editable rates</h2></div><span className="help">Yellow fields editable</span></div>
+          <div className="settings-grid">
+            <div className="setting hsd"><h3>HSD settings</h3><div className="two"><Field label="Testing qty" value={draft.hsdTesting} step="0.001" placeholder="0.000" onChange={hsdTesting => setDraft(d => ({ ...d, hsdTesting }))} /><Field label="Rate (₹/L)" value={draft.hsdRate} placeholder="e.g. 92.50" onChange={hsdRate => setDraft(d => ({ ...d, hsdRate }))} /></div></div>
+            {draft.mode === 'mixed' && <div className="setting ms"><h3>MS settings</h3><div className="two"><Field label="Testing qty" value={draft.msTesting} step="0.001" placeholder="0.000" onChange={msTesting => setDraft(d => ({ ...d, msTesting }))} /><Field label="Rate (₹/L)" value={draft.msRate} placeholder="e.g. 105.00" onChange={msRate => setDraft(d => ({ ...d, msRate }))} /></div></div>}
+            <div className="setting extra"><h3>Extra adjustment</h3><Field label="Plus (+) / Minus (−)" value={draft.extra} placeholder="+ / −" onChange={extra => setDraft(d => ({ ...d, extra }))} /></div>
           </div>
-          <div className="formula-lines">
-            {fuels.map(f => <div key={f}>{f}: {qty(fuelNet(f))} L × {inr.format(fuelRate(f))} = <b>{inr.format(fuelAmount(f))}</b></div>)}
-            {extraStr && <div>Extra (एक्स्ट्रा): {extraStr}</div>}
-            <div className="final-line">FINAL = {amountParts.join(' + ')}{extraStr} = <b>{inr.format(finalSale)}</b></div>
+        </section>
+
+        <section className="card">
+          <div className="section-head"><div><p className="eyebrow">Step 3</p><h2>Fuel sale summary</h2></div><span className="help">Live calculation</span></div>
+          <div className="summary-grid">
+            <ProductSummary fuel="HSD" gross={gross.HSD} testing={num(draft.hsdTesting)} net={hsdNet} rate={num(draft.hsdRate)} amount={hsdAmount} />
+            {draft.mode === 'mixed' && <ProductSummary fuel="MS" gross={gross.MS} testing={num(draft.msTesting)} net={msNet} rate={num(draft.msRate)} amount={msAmount} />}
           </div>
-          <div className="nozzle-chips">{map.map((f, i) => <span key={i} className={f.toLowerCase()}>T{i + 1} · {f} = {qty(diffs[i])}</span>)}</div>
-        </div>
-      </section>
+          <div className="sale-total"><div><span>FINAL FUEL SALE</span><strong>{inr.format(finalSale)}</strong></div><span className="pill">Calculated</span></div>
 
-      <section className="card">
-        <div className="section-head"><div><p className="eyebrow">Step 4</p><h2>Payment, udhari &amp; cash</h2></div><span className="help">Sale reconciliation</span></div>
-        <div className="payment-grid">
-          {(Object.entries({ udhari: 'Total Udhari', paytm: 'Total Paytm', fcard: 'Total F-Card', phonepe: 'Total PhonePe', bank: 'Bank / Other', kharche: 'Total Kharche', cash: 'Total Cash', other: 'Other adjustment' }) as [keyof Payments, string][]).map(([key, label]) => <Field key={key} label={label} value={draft.payments[key]} placeholder="0" onChange={v => updatePayment(key, v)} />)}
-        </div>
-        <div className="recon-grid"><Metric label="Final fuel sale" value={inr.format(finalSale)} /><Metric label="Total accounted" value={inr.format(accounted)} /><Metric label="Balance / fault" value={inr.format(balance)} danger={!matched} /></div>
-        <div role="status" className={`match ${matched ? '' : 'check'}`}>{matched ? 'MATCH — हिसाब बराबर है' : `CHECK — ${inr.format(balance)} का difference`}</div>
-      </section>
+          <div className="calc-block">
+            <h3>Full calculation — पूरा हिसाब</h3>
+            <div className="calc-wrap">
+              <table className="calc-table">
+                <thead><tr><th>Fuel</th><th>Total qty (कुल)</th><th>Testing</th><th>Net qty</th><th>Rate (रेट)</th><th>Amount (रकम)</th></tr></thead>
+                <tbody>{fuels.map(f => <tr key={f}>
+                  <td><span className={`fuel ${f.toLowerCase()}`}>{f}</span></td>
+                  <td>{qty(fuelGross(f))}</td>
+                  <td>{qty(fuelTest(f))}</td>
+                  <td>{qty(fuelNet(f))}</td>
+                  <td>{inr.format(fuelRate(f))}</td>
+                  <td>{inr.format(fuelAmount(f))}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+            <div className="formula-lines">
+              {fuels.map(f => <div key={f}>{f}: {qty(fuelNet(f))} L × {inr.format(fuelRate(f))} = <b>{inr.format(fuelAmount(f))}</b></div>)}
+              {extraStr && <div>Extra (एक्स्ट्रा): {extraStr}</div>}
+              <div className="final-line">FINAL = {amountParts.join(' + ')}{extraStr} = <b>{inr.format(finalSale)}</b></div>
+            </div>
+            <div className="nozzle-chips">{map.map((f, i) => <span key={i} className={f.toLowerCase()}>T{i + 1} · {f} = {qty(diffs[i])}</span>)}</div>
+          </div>
+        </section>
 
-      <div className="actions">
-        <div className="actions-left">
-          {!standalone && installEvt && <button className="install-btn" onClick={doInstall}>📲 Install app</button>}
-          <span className="save-status">{savedAt ? `Auto-saved ✓ ${savedAt}` : 'Auto-save on'}</span>
+        <section className="card">
+          <div className="section-head"><div><p className="eyebrow">Step 4</p><h2>Payment, udhari &amp; cash</h2></div><span className="help">Sale reconciliation</span></div>
+          <div className="payment-grid">
+            {(Object.entries({ udhari: 'Total Udhari', paytm: 'Total Paytm', fcard: 'Total F-Card', phonepe: 'Total PhonePe', bank: 'Bank / Other', kharche: 'Total Kharche', cash: 'Total Cash', other: 'Other adjustment' }) as [keyof Payments, string][]).map(([key, label]) => <Field key={key} label={label} value={draft.payments[key]} placeholder="0" onChange={v => updatePayment(key, v)} />)}
+          </div>
+          <div className="recon-grid"><Metric label="Final fuel sale" value={inr.format(finalSale)} /><Metric label="Total accounted" value={inr.format(accounted)} /><Metric label="Balance / fault" value={inr.format(balance)} danger={!matched} /></div>
+          <div role="status" className={`match ${matched ? '' : 'check'}`}>{matched ? 'MATCH — हिसाब बराबर है' : `CHECK — ${inr.format(balance)} का difference`}</div>
+        </section>
+
+        {saveError && <div className="alert">{saveError}</div>}
+
+        <div className="actions">
+          <div className="actions-left">
+            {!standalone && installEvt && <button className="install-btn" onClick={doInstall}>📲 Install app</button>}
+            <span className="save-status">{savedAt ? `Auto-saved ✓ ${savedAt}` : 'Auto-save on'}</span>
+          </div>
+          <div className="actions-right">
+            <button className="secondary" onClick={clearEntries}>Clear entries</button>
+            <button className="primary" onClick={() => window.print()}>🖨 Print report</button>
+          </div>
         </div>
-        <div className="actions-right">
-          <button className="secondary" onClick={clearEntries}>Clear entries</button>
-          <button className="primary" onClick={() => window.print()}>🖨 Print report</button>
-        </div>
+        {!standalone && !installEvt && <p className="install-note">PWA ready: browser menu से “Add to Home Screen” चुनकर app install करें।</p>}
+      </main>
+      <footer>Pump Book · Data आपके device पर local रहता है · Auto-save on</footer>
+    </div>
+
+    {lightbox && <div className="lightbox" onClick={() => setLightbox(null)}>
+      <div className="lightbox-inner" onClick={e => e.stopPropagation()}>
+        <div className="lightbox-head"><span>{lightbox.label}</span><a className="lightbox-dl" href={lightbox.photo} download={`${lightbox.label.replace(/\s+/g, '-')}.jpg`}>⬇ Save</a><button type="button" className="lightbox-close" onClick={() => setLightbox(null)}>✕</button></div>
+        <img src={lightbox.photo} alt={lightbox.label} />
+        <p className="lightbox-hint">Photo se reading padh kar number type karo · ⬇ Save se photo share/download bhi kar sakte ho</p>
       </div>
-      {!standalone && !installEvt && <p className="install-note">PWA ready: browser menu से “Add to Home Screen” चुनकर app install करें।</p>}
-    </main>
-    <footer>Pump Book · Data आपके device पर local रहता है · Auto-save on</footer>
-  </div>
+    </div>}
+  </>
 }
 
 function ProductSummary({ fuel, gross, testing, net, rate, amount }: { fuel: Fuel; gross: number; testing: number; net: number; rate: number; amount: number }) {
