@@ -16,7 +16,8 @@ A complete visual and scanning upgrade with the new **Pumpu** mascot, petrol-pum
 - **Hybrid backup** — offline-first local history plus password-protected AES-GCM `.pumpbook` backup/restore
 - **Pump Vision OCR** — fast fixed-layout pass + high-contrast thermal-print recovery + layout-independent document OCR
 - Time-budgeted Fast OCR: clean slips finish in a short path, deep retry storms are removed, and the OCR worker stays warm between morning/evening scans
-- Camera uses full sensor `contain` preview, minimum hardware zoom, continuous focus where available and a larger receipt guide
+- Camera uses the device-native environment stream, full sensor `contain` preview, minimum hardware zoom and continuous focus where available
+- Capture is cropped to the visible receipt guide (with safe padding) before OCR, so the document is not tiny inside a full camera frame
 - Animated scanner frame, laser sweep, progress stages, confidence score and editable verification
 - Pumpu mascot, branded app header, new green/amber fuel theme and four-step daily closing journey
 - Fluid device spacing with `clamp()`, safe-area support and adaptive scanner height for small/large phones

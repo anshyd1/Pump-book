@@ -91,7 +91,7 @@ export default function ReceiptScanner({ onApply }: Props) {
     {open && <div className="scanner-backdrop" role="presentation" onClick={close}>
       <section className="scanner-modal" role="dialog" aria-modal="true" aria-labelledby="scanner-title" onClick={event => event.stopPropagation()}>
         <div className="scanner-head">
-          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · SMART OCR 2.2.1</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
+          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · SMART OCR 3.2.2</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
           <button type="button" className="scanner-close" disabled={busy} onClick={close}>✕</button>
         </div>
 

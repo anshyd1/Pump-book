@@ -213,19 +213,25 @@ The +5° result confirms that true corner/perspective correction is still needed
 - OCR worker remains warm for two minutes, reducing the second morning/evening scan startup cost.
 - Headless Chromium benchmark with the supplied 12MP slip: first scan **5.28s**, second scan **4.23s**, both returning all four correct values. Phone time varies by CPU; first-ever language-model download is separate.
 
-## 11. Build and PWA health
+## 11. Camera-frame capture repair (3.2.2)
+- Removed forced 1920×1080 capture constraints and now requests the device-native environment stream, avoiding unwanted sensor crop/zoom on portrait phones.
+- Capture maps the visible on-screen receipt guide back to real video pixels and sends only that guide region, plus small safe padding, into OCR.
+- This prevents a correctly framed receipt from becoming tiny inside a full landscape camera image.
+- Full-sensor `contain` preview, minimum supported hardware zoom and continuous autofocus remain enabled.
+
+## 12. Build and PWA health
 
 - React + TypeScript build: **Pass**
 - Vite production build: **Pass**
 - JavaScript bundle: approximately **238 kB / 76 kB gzip**
 - CSS bundle: approximately **29 kB / 7.3 kB gzip**
 - Payment artwork: local SVG
-- PWA cache version: `pump-book-v13`
-- App version: `3.2.1`
+- PWA cache version: `pump-book-v14`
+- App version: `3.2.2`
 
 ---
 
-## 12. Remaining product risks
+## 13. Remaining product risks
 
 ### High priority
 1. Add automated visual regression tests for every release.
@@ -248,6 +254,6 @@ The +5° result confirms that true corner/perspective correction is still needed
 
 ---
 
-## 13. Release recommendation
+## 14. Release recommendation
 
 Version 2.2.1 is safe to deploy as a **repair release** for the reported clipping and scanner positioning problems. The supplied receipt now returns all four expected CumVolume values in browser testing. Before depending on it operationally, test at least five real morning/evening slip pairs from different lighting conditions and confirm every value manually.
