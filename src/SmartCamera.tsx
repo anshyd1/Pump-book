@@ -30,14 +30,19 @@ export default function SmartCamera({ open, onClose, onCapture }: Props) {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera API unavailable')
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
-          video: { facingMode: { ideal: facing }, width: { ideal: 2160 }, height: { ideal: 3840 } }
+          video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } }
         })
         if (cancelled) { stream.getTracks().forEach(track => track.stop()); return }
         streamRef.current = stream
         if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play() }
         const track = stream.getVideoTracks()[0] as TorchTrack
-        const caps = track.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean }) | undefined
-        setTorchSupported(Boolean(caps?.torch)); setReady(true)
+        const caps = track.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean; zoom?: { min: number; max: number }; focusMode?: string[] }) | undefined
+        setTorchSupported(Boolean(caps?.torch))
+        const advanced: MediaTrackConstraintSet[] = []
+        if (caps?.zoom) advanced.push({ zoom: caps.zoom.min } as MediaTrackConstraintSet)
+        if (caps?.focusMode?.includes('continuous')) advanced.push({ focusMode: 'continuous' } as MediaTrackConstraintSet)
+        if (advanced.length) await track.applyConstraints({ advanced }).catch(() => undefined)
+        setReady(true)
       } catch (reason) {
         console.error(reason)
         setError('Camera permission नहीं मिला। Browser permission Allow करें या Gallery Upload इस्तेमाल करें।')

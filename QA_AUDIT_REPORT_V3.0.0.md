@@ -187,19 +187,38 @@ The app currently locks pinch/double-tap zoom through viewport settings and pan-
 - Hybrid storage remains offline-first and adds password-protected AES-GCM backup/restore files.
 - Backup contains the current draft and full saved history; wrong password fails without overwriting local data.
 
-## 9. Build and PWA health
+## 9. Camera anti-zoom and upload OCR repair (3.2)
+- Camera preview changed from `cover` to `contain`, preventing the browser from cropping and enlarging the sensor feed.
+- Camera requests a normal 1920×1080 environment stream instead of a forced tall stream; minimum hardware zoom and continuous focus are applied where supported.
+- Receipt guide expanded to 88vw and remains inside safe areas.
+- Upload pipeline now detects the tall thermal-paper component, normalizes it and combines original-frame, auto-crop, high-contrast, deskew and edge passes.
+- Nozzle-specific minimum validation rejects shortened OCR fragments and CumSale tails.
+- Partial scans now name missing T1–T4 fields and deliberately leave them blank instead of presenting a false reading.
+
+Browser OCR matrix using the supplied slip:
+
+| Variant | Result |
+|---|---|
+| Original upload | T1–T4 all correct |
+| Horizontally zoomed/cropped | T1–T4 all correct |
+| 32% darker image | T1–T4 all correct |
+| Synthetic +5° expanded rotation | T2/T3 correct; T1/T4 safely blank |
+
+The +5° result confirms that true corner/perspective correction is still needed for extreme crooked captures; the release prioritizes no false financial value over forced autofill.
+
+## 10. Build and PWA health
 
 - React + TypeScript build: **Pass**
 - Vite production build: **Pass**
 - JavaScript bundle: approximately **238 kB / 76 kB gzip**
 - CSS bundle: approximately **29 kB / 7.3 kB gzip**
 - Payment artwork: local SVG
-- PWA cache version: `pump-book-v11`
-- App version: `3.1.0`
+- PWA cache version: `pump-book-v12`
+- App version: `3.2.0`
 
 ---
 
-## 10. Remaining product risks
+## 11. Remaining product risks
 
 ### High priority
 1. Add automated visual regression tests for every release.
@@ -222,6 +241,6 @@ The app currently locks pinch/double-tap zoom through viewport settings and pan-
 
 ---
 
-## 11. Release recommendation
+## 12. Release recommendation
 
 Version 2.2.1 is safe to deploy as a **repair release** for the reported clipping and scanner positioning problems. The supplied receipt now returns all four expected CumVolume values in browser testing. Before depending on it operationally, test at least five real morning/evening slip pairs from different lighting conditions and confirm every value manually.

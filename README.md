@@ -15,7 +15,8 @@ A complete visual and scanning upgrade with the new **Pumpu** mascot, petrol-pum
 - **Daily Data Center** — saved closing history, date filter, restore/open/delete, WhatsApp/Web Share and real multi-sheet `.xlsx` export
 - **Hybrid backup** — offline-first local history plus password-protected AES-GCM `.pumpbook` backup/restore
 - **Pump Vision OCR** — fast fixed-layout pass + high-contrast thermal-print recovery + layout-independent document OCR
-- Smart fallback handles zoomed, lightly rotated (±3°), faint and imperfectly framed slips; `rotateAuto` also checks orientation
+- Multi-pass scanner handles standard, zoomed and dark uploads with auto paper detection; uncertain fragments are rejected instead of silently auto-filled
+- Camera uses full sensor `contain` preview, minimum hardware zoom, continuous focus where available and a larger receipt guide
 - Animated scanner frame, laser sweep, progress stages, confidence score and editable verification
 - Pumpu mascot, branded app header, new green/amber fuel theme and four-step daily closing journey
 - Fluid device spacing with `clamp()`, safe-area support and adaptive scanner height for small/large phones

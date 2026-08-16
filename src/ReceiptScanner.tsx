@@ -52,7 +52,9 @@ export default function ReceiptScanner({ onApply }: Props) {
       setConfidence(result.confidence)
       setRawText(result.rawText)
       if (result.suggestedSlot) setSlot(result.suggestedSlot)
-      if (!result.readings.some(Boolean)) setError('Reading साफ नहीं मिली। फोटो सीधी, पास से और अच्छी रोशनी में लेकर दोबारा scan करें।')
+      const missing = result.readings.map((value, index) => value ? '' : `T${index + 1}`).filter(Boolean)
+      if (missing.length === 4) setError('कोई reading साफ नहीं मिली। पूरी slip frame में रखकर अच्छी रोशनी में दोबारा scan करें।')
+      else if (missing.length) setError(`${missing.join(', ')} verify नहीं हुई—गलत number भरने के बजाय blank छोड़ी गई है। Photo सीधी करके retry करें या manual भरें।`)
     } catch (scanError) {
       console.error(scanError)
       setError('Scan नहीं हो पाया। Internet check करके या साफ फोटो से दोबारा कोशिश करें।')
