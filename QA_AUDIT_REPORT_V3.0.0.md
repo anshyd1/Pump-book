@@ -1,4 +1,4 @@
-# Pump Book 2.2.1 — Full Mobile QA & Repair Report
+# Pump Book 3.0.0 — Full Mobile QA & Repair Report
 
 **Audit date:** 15 August 2026
 **Scope:** responsive layout, clipping, scanner modal, OCR correctness, touch targets, PWA caching, payment artwork, build health
@@ -164,19 +164,34 @@ The app currently locks pinch/double-tap zoom through viewport settings and pan-
 
 ---
 
-## 7. Build and PWA health
+## 7. Premium camera and one-page printing update
+
+### In-app camera
+- Smart Scan now opens Pump Book’s own `getUserMedia` camera instead of immediately handing control to the phone’s basic file camera.
+- Includes a live document guide, animated scan laser, HD capture, camera flip and hardware torch control when the browser/device exposes it.
+- Camera remains exactly within `100vw × 100dvh`; automated fake-camera testing passed at 393 × 852.
+- Gallery Upload remains available when permission is denied or a device lacks the camera API.
+- The captured frame is converted to a high-quality JPEG and sent directly into the existing OCR verification pipeline.
+
+### One-page print sheet
+- Normal app cards are hidden during printing.
+- A dedicated Excel-style report is generated in A4 landscape format.
+- Contains header metadata, four totalizers, fuel summary, eight payment modes, final reconciliation, status and three signature lines.
+- Automated Chromium PDF testing produced exactly **one page**.
+
+## 8. Build and PWA health
 
 - React + TypeScript build: **Pass**
 - Vite production build: **Pass**
 - JavaScript bundle: approximately **238 kB / 76 kB gzip**
 - CSS bundle: approximately **29 kB / 7.3 kB gzip**
 - Payment artwork: local SVG
-- PWA cache version: `pump-book-v9`
-- App version: `2.2.1`
+- PWA cache version: `pump-book-v10`
+- App version: `3.0.0`
 
 ---
 
-## 8. Remaining product risks
+## 9. Remaining product risks
 
 ### High priority
 1. Add automated visual regression tests for every release.
@@ -199,6 +214,6 @@ The app currently locks pinch/double-tap zoom through viewport settings and pan-
 
 ---
 
-## 9. Release recommendation
+## 10. Release recommendation
 
 Version 2.2.1 is safe to deploy as a **repair release** for the reported clipping and scanner positioning problems. The supplied receipt now returns all four expected CumVolume values in browser testing. Before depending on it operationally, test at least five real morning/evening slip pairs from different lighting conditions and confirm every value manually.

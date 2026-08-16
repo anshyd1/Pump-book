@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReceiptScanner from './ReceiptScanner'
 import BrandMascot from './BrandMascot'
 import PaymentIcon from './PaymentIcon'
+import PrintReport from './PrintReport'
 import type { PaymentKind } from './PaymentIcon'
 import type { ReadingSlot } from './receiptOcr'
 
@@ -172,6 +173,15 @@ export default function App() {
   const extraStr = extraNum > 0 ? ` + ${inr.format(extraNum)}` : extraNum < 0 ? ` − ${inr.format(Math.abs(extraNum))}` : ''
 
   return <>
+    <PrintReport
+      date={draft.date}
+      note={draft.note}
+      mode={draft.mode === 'allHsd' ? 'Mode 1 · HSD / HSD / HSD / HSD' : 'Mode 2 · MS / HSD / MS / HSD'}
+      readings={map.map((fuel, index) => ({ nozzle: `T${index + 1}`, fuel, opening: draft.readings[draft.mode][index].morning || '—', closing: draft.readings[draft.mode][index].evening || '—', sale: qty(diffs[index]) }))}
+      fuels={fuels.map(fuel => ({ fuel, gross: qty(fuelGross(fuel)), testing: qty(fuelTest(fuel)), net: qty(fuelNet(fuel)), rate: inr.format(fuelRate(fuel)), amount: inr.format(fuelAmount(fuel)) }))}
+      payments={(Object.entries({ udhari: 'Udhari', paytm: 'Paytm', fcard: 'F-Card', phonepe: 'PhonePe', bank: 'Bank', kharche: 'Kharche', cash: 'Cash', other: 'Other' }) as [keyof Payments, string][]).map(([key, label]) => ({ label, value: inr.format(num(draft.payments[key])) }))}
+      finalSale={inr.format(finalSale)} accounted={inr.format(accounted)} balance={inr.format(balance)} matched={matched}
+    />
     <div className="shell">
       <div className="print-head">Pump Book — Day Report<span>{draft.date}{draft.note ? ` · ${draft.note}` : ''}</span></div>
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { scanReceipt } from './receiptOcr'
 import BrandMascot from './BrandMascot'
+import SmartCamera from './SmartCamera'
 import type { ReadingSlot } from './receiptOcr'
 
 type Props = {
@@ -9,8 +10,8 @@ type Props = {
 }
 
 export default function ReceiptScanner({ onApply }: Props) {
-  const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
+  const [cameraOpen, setCameraOpen] = useState(false)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -80,9 +81,8 @@ export default function ReceiptScanner({ onApply }: Props) {
 
   return <>
     <div className="scan-actions">
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={handleFile} />
       <input ref={galleryRef} type="file" accept="image/*" hidden onChange={handleFile} />
-      <button type="button" className="scan-btn" onClick={() => cameraRef.current?.click()}><span className="scan-btn-icon">⌗</span><span>Smart Scan<small>Camera</small></span><i>→</i></button>
+      <button type="button" className="scan-btn" onClick={() => setCameraOpen(true)}><span className="scan-btn-icon">⌗</span><span>Smart Scan<small>Premium camera</small></span><i>→</i></button>
       <button type="button" className="scan-gallery" title="Gallery की slip scan करें" aria-label="Gallery की slip scan करें" onClick={() => galleryRef.current?.click()}><span>▧</span><small>Upload</small></button>
     </div>
 
@@ -123,10 +123,11 @@ export default function ReceiptScanner({ onApply }: Props) {
         </div>
 
         <div className="scanner-footer">
-          {!busy && <button type="button" className="secondary" onClick={() => cameraRef.current?.click()}>📷 फिर scan करें</button>}
+          {!busy && <button type="button" className="secondary" onClick={() => setCameraOpen(true)}>⌗ फिर scan करें</button>}
           <button type="button" className="primary" disabled={busy || !readings.some(Boolean)} onClick={apply}>✓ {slot === 'morning' ? 'Morning' : 'Evening'} Auto Fill</button>
         </div>
       </section>
     </div>}
+    <SmartCamera open={cameraOpen} onClose={() => setCameraOpen(false)} onCapture={file => void startScan(file)}/>
   </>
 }

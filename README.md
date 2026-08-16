@@ -10,7 +10,9 @@ A complete visual and scanning upgrade with the new **Pumpu** mascot, petrol-pum
 
 ## Features
 
-- **Pump Vision OCR 2.0** — fast fixed-layout pass + high-contrast thermal-print recovery + layout-independent document OCR
+- **Premium in-app Pump Vision camera** — live camera preview, receipt framing guide, animated laser, HD capture, torch control, camera flip and Gallery fallback
+- **One-page Excel-style print report** — dedicated A4 landscape sheet with totalizers, fuel sale, payment breakup, reconciliation and signatures
+- **Pump Vision OCR** — fast fixed-layout pass + high-contrast thermal-print recovery + layout-independent document OCR
 - Smart fallback handles zoomed, lightly rotated (±3°), faint and imperfectly framed slips; `rotateAuto` also checks orientation
 - Animated scanner frame, laser sweep, progress stages, confidence score and editable verification
 - Pumpu mascot, branded app header, new green/amber fuel theme and four-step daily closing journey
