@@ -206,19 +206,26 @@ Browser OCR matrix using the supplied slip:
 
 The +5° result confirms that true corner/perspective correction is still needed for extreme crooked captures; the release prioritizes no false financial value over forced autofill.
 
-## 10. Build and PWA health
+## 10. Fast OCR performance repair (3.2.1)
+- Removed the worst-case retry tree that could trigger dozens of OCR jobs on a difficult photo.
+- Clean slips now use four small line reads plus one T1 verification; only missing fields receive a single crop pass and one document fallback.
+- Fallback work has a 12-second processing budget rather than open-ended angle/threshold loops.
+- OCR worker remains warm for two minutes, reducing the second morning/evening scan startup cost.
+- Headless Chromium benchmark with the supplied 12MP slip: first scan **5.28s**, second scan **4.23s**, both returning all four correct values. Phone time varies by CPU; first-ever language-model download is separate.
+
+## 11. Build and PWA health
 
 - React + TypeScript build: **Pass**
 - Vite production build: **Pass**
 - JavaScript bundle: approximately **238 kB / 76 kB gzip**
 - CSS bundle: approximately **29 kB / 7.3 kB gzip**
 - Payment artwork: local SVG
-- PWA cache version: `pump-book-v12`
-- App version: `3.2.0`
+- PWA cache version: `pump-book-v13`
+- App version: `3.2.1`
 
 ---
 
-## 11. Remaining product risks
+## 12. Remaining product risks
 
 ### High priority
 1. Add automated visual regression tests for every release.
@@ -241,6 +248,6 @@ The +5° result confirms that true corner/perspective correction is still needed
 
 ---
 
-## 12. Release recommendation
+## 13. Release recommendation
 
 Version 2.2.1 is safe to deploy as a **repair release** for the reported clipping and scanner positioning problems. The supplied receipt now returns all four expected CumVolume values in browser testing. Before depending on it operationally, test at least five real morning/evening slip pairs from different lighting conditions and confirm every value manually.

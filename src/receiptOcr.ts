@@ -4,6 +4,22 @@ export type ReadingSlot = 'morning' | 'evening'
 export type ScanResult = { readings: string[]; confidence: number; rawText: string; slipTime: string; suggestedSlot: ReadingSlot | null }
 
 type LoadedImage = { width: number; height: number; image: HTMLImageElement }
+type OcrWorker = Awaited<ReturnType<typeof createWorker>>
+let workerPromise: Promise<OcrWorker> | null = null
+let workerLogger: ((progress: number, status: string) => void) | null = null
+let workerIdleTimer: number | undefined
+const getOcrWorker = () => {
+  if (workerIdleTimer) window.clearTimeout(workerIdleTimer)
+  if (!workerPromise) workerPromise = createWorker('eng', 1, { logger: message => workerLogger?.(message.progress || 0, message.status) })
+  return workerPromise
+}
+const releaseOcrWorkerLater = () => {
+  if (workerIdleTimer) window.clearTimeout(workerIdleTimer)
+  workerIdleTimer = window.setTimeout(() => {
+    const current = workerPromise; workerPromise = null; workerLogger = null
+    void current?.then(worker => worker.terminate()).catch(() => undefined)
+  }, 120_000)
+}
 
 const candidateNumbers = (value: string): string[] => {
   // Horizontal OCR gaps हटाएँ, लेकिन lines को कभी concatenate न करें—वरना दो अलग numbers मिलकर fake decimal बनाते हैं।
@@ -188,20 +204,22 @@ export function parseDocumentText(raw: string): string[] {
 const LINE_TOP_RATIOS = [0.2734, 0.4785, 0.7080, 0.9717]
 
 export async function scanReceipt(file: File, onProgress: (progress: number, status: string) => void): Promise<ScanResult> {
+  const started = performance.now(), deadline = started + 12_000
   const loaded = await loadImage(file)
-  onProgress(.02, 'detecting receipt')
-  const source = imageCanvas(loaded)
-  const normalized = normalizeReceipt(loaded)
+  onProgress(.03, 'detecting receipt')
+  const source = imageCanvas(loaded), normalized = normalizeReceipt(loaded)
   const width = source.width, height = source.height
-  let completed = 0
-  const worker = await createWorker('eng', 1, { logger: message => {
-    if (message.status === 'recognizing text') onProgress(Math.min(.96, (completed + message.progress) / 5), 'recognizing text')
-    else onProgress(0, message.status)
-  } })
+  let stage = 0
+  workerLogger = (progress, status) => {
+    if (status === 'recognizing text') onProgress(Math.min(.94, .08 + stage * .15 + progress * .12), 'recognizing text')
+    else onProgress(.04, status)
+  }
+  const worker = await getOcrWorker()
   const readings = ['', '', '', ''], texts: string[] = []
+  const hasTime = () => performance.now() < deadline
 
   try {
-    // Pass 1: fast fixed-layout scan for a full IndianOil slip.
+    // Fast path: five small OCR jobs. A clean, straight slip finishes here.
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,', user_defined_dpi: '300' })
     for (let index = 0; index < 4; index += 1) {
       const top = Math.min(height - 1, Math.max(0, Math.round(height * LINE_TOP_RATIOS[index])))
@@ -209,132 +227,44 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
         left: Math.round(width * .30), top, width: Math.round(width * .55),
         height: Math.max(50, Math.min(height - top, Math.round(height * .020)))
       } })
-      texts[index] = `Fast T${index + 1}: ${data.text}`; readings[index] = validForNozzle(numberFrom(data.text), index)
-      completed = index + 1; onProgress(completed / 5, 'recognizing text')
+      readings[index] = validForNozzle(numberFrom(data.text), index)
+      texts.push(`Fast T${index + 1}: ${data.text}`); stage += 1
     }
 
-    // Pass 2: T1 हमेशा dedicated high-contrast crop से verify/override हो।
-    // Fast line कभी-कभी पास वाली ShMTHVol को valid totalizer समझ लेती है।
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
-    for (const threshold of [130, 150]) {
-      const { data } = await worker.recognize(thresholdCrop(source, width, height, threshold))
-      texts.push(`T1 contrast ${threshold}: ${data.text}`)
-      const verifiedT1 = largestNumberFrom(data.text)
-      if (validForNozzle(verifiedT1, 0)) { readings[0] = verifiedT1; break }
-    }
+    // T1 is always verified once because its thermal line is faint on this pump.
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '0123456789.,' })
+    const t1 = await worker.recognize(thresholdCrop(source, width, height, 130))
+    const verifiedT1 = validForNozzle(largestNumberFrom(t1.data.text), 0)
+    if (verifiedT1) readings[0] = verifiedT1
+    texts.push(`T1 verify: ${t1.data.text}`); stage += 1
 
-    // Pass 3: repeat targeted lines on the automatically detected paper crop.
-    if (readings.some(value => !value)) {
+    // One auto-cropped coordinate pass only for fields still missing.
+    if (readings.some(value => !value) && hasTime()) {
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,' })
-      for (let index = 0; index < 4; index += 1) {
+      for (let index = 0; index < 4 && hasTime(); index += 1) {
         if (readings[index]) continue
         const top = Math.min(normalized.height - 1, Math.max(0, Math.round(normalized.height * LINE_TOP_RATIOS[index])))
         const { data } = await worker.recognize(normalized, { rectangle: {
-          left: Math.round(normalized.width * .12), top, width: Math.round(normalized.width * .76),
-          height: Math.max(50, Math.min(normalized.height - top, Math.round(normalized.height * .026)))
+          left: Math.round(normalized.width * .08), top, width: Math.round(normalized.width * .84),
+          height: Math.max(48, Math.min(normalized.height - top, Math.round(normalized.height * .03)))
         } })
-        texts.push(`Auto-crop T${index + 1}: ${data.text}`)
         readings[index] = validForNozzle(numberFrom(data.text), index)
-      }
-      if (!readings[0]) {
-        await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
-        for (const threshold of [120, 140, 160]) {
-          const { data } = await worker.recognize(thresholdCrop(normalized, normalized.width, normalized.height, threshold))
-          const verified = largestNumberFrom(data.text); texts.push(`Auto-crop T1 ${threshold}: ${data.text}`)
-          if (validForNozzle(verified, 0)) { readings[0] = verified; break }
-        }
+        texts.push(`Crop T${index + 1}: ${data.text}`); stage += 1
       }
     }
 
-    // Thermal section crops use the whole detected paper width, so zoomed uploads do not lose leading digits.
-    if (readings.some(value => !value)) {
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '' })
-      for (let index = 0; index < 4; index += 1) {
-        if (readings[index]) continue
-        for (const threshold of [110, 130, 150, 170]) {
-          const { data } = await worker.recognize(thermalSectionCrop(normalized, index, threshold))
-          texts.push(`Thermal section T${index + 1} ${threshold}: ${data.text}`)
-          const verified = validForNozzle(cumVolumeFromSection(data.text), index)
-          if (verified) { readings[index] = verified; break }
-        }
-      }
-    }
-
-    // Deskew the detected paper before another label-aware thermal pass.
-    if (readings.some(value => !value)) {
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '' })
-      for (const angle of [-6, 6]) {
-        const deskewed = rotateSameSize(normalized, angle)
-        for (let index = 0; index < 4; index += 1) {
-          if (readings[index]) continue
-          const { data } = await worker.recognize(thermalSectionCrop(deskewed, index, 130))
-          texts.push(`Deskew thermal T${index + 1} ${angle}°: ${data.text}`)
-          const verified = validForNozzle(cumVolumeFromSection(data.text), index)
-          if (verified) readings[index] = verified
-        }
-        if (readings.every(Boolean)) break
-      }
-    }
-
-    // Bottom-edge hunt: T4 sits close to the photo edge, so search several narrow rows after deskew.
-    if (!readings[3]) {
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,' })
-      for (const angle of [-6, 6, 0]) {
-        const deskewed = angle ? rotateSameSize(normalized, angle) : normalized
-        for (const ratio of [.92, .935, .95, .965, .98]) {
-          const top = Math.min(deskewed.height - 1, Math.round(deskewed.height * ratio))
-          const { data } = await worker.recognize(deskewed, { rectangle: { left: 0, top, width: deskewed.width, height: Math.min(deskewed.height - top, Math.max(45, Math.round(deskewed.height * .024))) } })
-          texts.push(`T4 edge ${angle}° ${ratio}: ${data.text}`)
-          const verified = validForNozzle(numberFrom(data.text), 3)
-          if (verified) { readings[3] = verified; break }
-        }
-        if (readings[3]) break
-      }
-    }
-
-    // Pass 4: wide-line retries recover zoomed photos and ±6° crooked captures.
-    if (readings.some(value => !value)) {
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,' })
-      for (const angle of [0, -6, 6, -3, 3]) {
-        const retrySource = angle === 0 ? source : documentCanvas(source, angle)
-        for (let index = 0; index < 4; index += 1) {
-          if (readings[index]) continue
-          const top = Math.max(0, Math.min(retrySource.height - 1, Math.round(retrySource.height * LINE_TOP_RATIOS[index])))
-          const { data } = await worker.recognize(retrySource, { rectangle: {
-            left: Math.round(retrySource.width * .04), top, width: Math.round(retrySource.width * .92),
-            height: Math.max(45, Math.min(retrySource.height - top, Math.round(retrySource.height * .028)))
-          } })
-          texts.push(`Wide T${index + 1} ${angle}°: ${data.text}`)
-          readings[index] = validForNozzle(numberFrom(data.text), index)
-        }
-        if (readings.every(Boolean)) break
-      }
-    }
-
-    // Pass 5: layout-independent OCR handles zoom, rotation and imperfect framing.
-    if (readings.some(value => !value)) {
+    // One label-aware document pass; no long angle/threshold loops.
+    if (readings.some(value => !value) && hasTime()) {
       await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO, tessedit_char_whitelist: '', preserve_interword_spaces: '1' })
-      for (const [passName, document] of [['auto-crop', normalized], ['full-frame', source]] as const) {
-        for (const angle of [0, -3, 3, -6, 6]) {
-          const { data } = await worker.recognize(documentCanvas(document, angle), { rotateAuto: true })
-          texts.push(`Smart ${passName} ${angle}°:\n${data.text}`)
-          const found = parseDocumentText(data.text)
-          found.forEach((value, index) => {
-            const verified = validForNozzle(value, index)
-            const duplicatesAnotherNozzle = readings.some((current, currentIndex) => currentIndex !== index && current === verified)
-            if (!readings[index] && verified && !duplicatesAnotherNozzle) readings[index] = verified
-          })
-          if (readings.every(Boolean)) break
-        }
-        if (readings.every(Boolean)) break
-      }
+      const { data } = await worker.recognize(documentCanvas(normalized, 0), { rotateAuto: true })
+      texts.push(`Document fallback:\n${data.text}`)
+      parseDocumentText(data.text).forEach((value, index) => {
+        const verified = validForNozzle(value, index)
+        if (!readings[index] && verified && !readings.some((current, other) => other !== index && current === verified)) readings[index] = verified
+      })
     }
 
     onProgress(1, 'recognizing text')
-    return {
-      readings,
-      confidence: readings.filter(Boolean).length * 25,
-      rawText: texts.join('\n'), slipTime: '', suggestedSlot: null
-    }
-  } finally { await worker.terminate() }
+    return { readings, confidence: readings.filter(Boolean).length * 25, rawText: texts.join('\n'), slipTime: '', suggestedSlot: null }
+  } finally { workerLogger = null; releaseOcrWorkerLater() }
 }

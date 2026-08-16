@@ -46,7 +46,7 @@ export default function ReceiptScanner({ onApply }: Props) {
     try {
       const result = await scanReceipt(file, (value, nextStatus) => {
         setProgress(Math.round(value * 100))
-        setStatus(nextStatus === 'recognizing text' ? '4 CumVolume readings पढ़ी जा रही हैं…' : 'Scanner तैयार हो रहा है…')
+        setStatus(nextStatus === 'recognizing text' ? 'Fast OCR से 4 readings पढ़ रहे हैं…' : nextStatus === 'detecting receipt' ? 'Receipt auto-frame हो रही है…' : 'OCR engine तैयार हो रहा है…')
       })
       setReadings(result.readings)
       setConfidence(result.confidence)
@@ -103,7 +103,7 @@ export default function ReceiptScanner({ onApply }: Props) {
               <div><strong>{status}</strong><p>Photo को साफ करके numbers खोज रहे हैं</p></div>
               <div className="progress-track"><span style={{ width: `${Math.max(4, progress)}%` }} /></div>
               <div className="scan-stages"><span className={progress > 5 ? 'done' : 'active'}>Enhance</span><span className={progress > 30 ? 'done' : ''}>Deskew</span><span className={progress > 60 ? 'done' : ''}>Read</span><span className={progress >= 100 ? 'done' : ''}>Verify</span></div>
-              <small>{progress}% · पहली scan पर OCR engine download हो सकता है</small>
+              <small>{progress}% · सामान्य scan 5–12 sec · पहली बार OCR engine download अलग से हो सकता है</small>
             </div> : <>
               <div className="scan-result-head"><div><span className="result-kicker">SCAN COMPLETE</span><strong>CumVolume readings</strong></div>{confidence !== null && <span className={`confidence ${confidence === 100 ? 'perfect' : ''}`}><b>{confidence}%</b><small>confidence</small></span>}</div>
               <div className="slot-picker">
