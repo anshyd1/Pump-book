@@ -48,7 +48,7 @@ const loadImage = (file: File): Promise<LoadedImage> => new Promise((resolve, re
 })
 
 const imageCanvas = ({ image, width, height }: LoadedImage): HTMLCanvasElement => {
-  const scale = Math.min(1, 3000 / Math.max(width, height))
+  const scale = Math.min(2.5, 3000 / Math.max(width, height))
   const canvas = document.createElement('canvas'); canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale)
   canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height)
   return canvas
@@ -96,7 +96,7 @@ const normalizeReceipt = ({ image, width, height }: LoadedImage): HTMLCanvasElem
   const padX = Math.round((box.right - box.left) * .22), padY = Math.round((box.bottom - box.top) * .015)
   const sx = Math.max(0, Math.round((box.left - padX) * ratioX)), sy = Math.max(0, Math.round((box.top - padY) * ratioY))
   const ex = Math.min(width, Math.round((box.right + padX) * ratioX)), ey = Math.min(height, Math.round((box.bottom + padY) * ratioY))
-  const cropW = Math.max(1, ex - sx), cropH = Math.max(1, ey - sy), scale = Math.min(1, 3000 / Math.max(cropW, cropH))
+  const cropW = Math.max(1, ex - sx), cropH = Math.max(1, ey - sy), scale = Math.min(2.5, 3000 / Math.max(cropW, cropH))
   const canvas = document.createElement('canvas'); canvas.width = Math.round(cropW * scale); canvas.height = Math.round(cropH * scale)
   canvas.getContext('2d')!.drawImage(image, sx, sy, cropW, cropH, 0, 0, canvas.width, canvas.height)
   return canvas
@@ -117,6 +117,34 @@ const thresholdCrop = (image: CanvasImageSource, width: number, height: number, 
   }
   context.putImageData(pixels, 0, 0)
   return canvas
+}
+
+const adaptiveLineCrop = (image: HTMLCanvasElement, index: number): HTMLCanvasElement => {
+  const top = Math.max(0, Math.round(image.height * (LINE_TOP_RATIOS[index] - .012)))
+  const cropH = Math.min(image.height - top, Math.max(55, Math.round(image.height * .045)))
+  const scale = Math.min(2.4, 2200 / image.width)
+  const canvas = document.createElement('canvas'); canvas.width = Math.round(image.width * scale); canvas.height = Math.round(cropH * scale)
+  const context = canvas.getContext('2d', { willReadFrequently: true })!
+  context.drawImage(image, 0, top, image.width, cropH, 0, 0, canvas.width, canvas.height)
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height), w = canvas.width, h = canvas.height
+  const gray = new Uint8Array(w * h), integral = new Uint32Array((w + 1) * (h + 1))
+  for (let y = 0; y < h; y += 1) {
+    let row = 0
+    for (let x = 0; x < w; x += 1) {
+      const at = y * w + x, p = at * 4
+      gray[at] = Math.round(pixels.data[p] * .299 + pixels.data[p + 1] * .587 + pixels.data[p + 2] * .114)
+      row += gray[at]; integral[(y + 1) * (w + 1) + x + 1] = integral[y * (w + 1) + x + 1] + row
+    }
+  }
+  const radius = Math.max(10, Math.round(w / 65))
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+    const x0 = Math.max(0, x - radius), y0 = Math.max(0, y - radius), x1 = Math.min(w - 1, x + radius), y1 = Math.min(h - 1, y + radius)
+    const area = (x1 - x0 + 1) * (y1 - y0 + 1)
+    const sum = integral[(y1 + 1) * (w + 1) + x1 + 1] - integral[y0 * (w + 1) + x1 + 1] - integral[(y1 + 1) * (w + 1) + x0] + integral[y0 * (w + 1) + x0]
+    const value = gray[y * w + x] < sum / area - 9 ? 0 : 255, p = (y * w + x) * 4
+    pixels.data[p] = value; pixels.data[p + 1] = value; pixels.data[p + 2] = value
+  }
+  context.putImageData(pixels, 0, 0); return canvas
 }
 
 const thermalSectionCrop = (image: HTMLCanvasElement, index: number, threshold: number): HTMLCanvasElement => {
@@ -238,6 +266,18 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
     if (verifiedT1) readings[0] = verifiedT1
     texts.push(`T1 verify: ${t1.data.text}`); stage += 1
 
+    // Faded T1 gets at most two extra binary thresholds, only when the primary verification failed.
+    if (!readings[0] && hasTime()) {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '0123456789.,' })
+      for (const threshold of [110, 155]) {
+        const { data } = await worker.recognize(thresholdCrop(source, width, height, threshold))
+        const verified = validForNozzle(largestNumberFrom(data.text), 0)
+        texts.push(`T1 retry ${threshold}: ${data.text}`); stage += 1
+        if (verified) { readings[0] = verified; break }
+        if (!hasTime()) break
+      }
+    }
+
     // One auto-cropped coordinate pass only for fields still missing.
     if (readings.some(value => !value) && hasTime()) {
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,' })
@@ -250,6 +290,18 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
         } })
         readings[index] = validForNozzle(numberFrom(data.text), index)
         texts.push(`Crop T${index + 1}: ${data.text}`); stage += 1
+      }
+    }
+
+    // Low-camera-quality pass: adaptive local threshold handles shadows and faded thermal text.
+    if (readings.some(value => !value) && hasTime()) {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,' })
+      for (let index = 0; index < 4 && hasTime(); index += 1) {
+        if (readings[index]) continue
+        const { data } = await worker.recognize(adaptiveLineCrop(normalized, index))
+        const verified = validForNozzle(numberFrom(data.text), index)
+        if (verified) readings[index] = verified
+        texts.push(`Adaptive T${index + 1}: ${data.text}`); stage += 1
       }
     }
 
