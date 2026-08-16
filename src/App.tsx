@@ -3,6 +3,9 @@ import ReceiptScanner from './ReceiptScanner'
 import BrandMascot from './BrandMascot'
 import PaymentIcon from './PaymentIcon'
 import PrintReport from './PrintReport'
+import DataHub from './DataHub'
+import type { HistorySummary } from './DataHub'
+import { createXlsx, decryptBackup, downloadBlob, encryptedBackup } from './dataTools'
 import type { PaymentKind } from './PaymentIcon'
 import type { ReadingSlot } from './receiptOcr'
 
@@ -14,6 +17,8 @@ type Draft = {
   mode: Mode; date: string; note: string; readings: Record<Mode, Reading[]>
   hsdTesting: string; hsdRate: string; msTesting: string; msRate: string; extra: string; payments: Payments
 }
+type SavedDay = { id: string; savedAt: string; draft: Draft; finalSale: number; balance: number }
+type BackupPayload = { version: 1; current: Draft; history: SavedDay[] }
 type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 
 const productMap: Record<Mode, Fuel[]> = {
@@ -86,6 +91,7 @@ function PaymentField({ kind, label, value, onChange }: { kind: PaymentKind; lab
 
 export default function App() {
   const STORAGE_KEY = 'pump-book-draft-v3'
+  const HISTORY_KEY = 'pump-book-history-v1'
   const [draft, setDraft] = useState<Draft>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem('pump-book-draft-v2')
@@ -93,6 +99,9 @@ export default function App() {
       localStorage.removeItem('pump-book-draft-v2')
       return sanitize(JSON.parse(saved))
     } catch { return initialDraft() }
+  })
+  const [history, setHistory] = useState<SavedDay[]>(() => {
+    try { const raw = localStorage.getItem(HISTORY_KEY); return raw ? JSON.parse(raw) as SavedDay[] : [] } catch { return [] }
   })
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -126,6 +135,7 @@ export default function App() {
     }, 600)
     return () => clearTimeout(t)
   }, [draft])
+  useEffect(() => { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)) }, [history])
 
   // PWA install prompt
   useEffect(() => {
@@ -171,6 +181,34 @@ export default function App() {
 
   const amountParts = fuels.map(f => inr.format(fuelAmount(f)))
   const extraStr = extraNum > 0 ? ` + ${inr.format(extraNum)}` : extraNum < 0 ? ` − ${inr.format(Math.abs(extraNum))}` : ''
+
+  const saveCurrentDay = () => {
+    const id = `${draft.date}-${draft.mode}`
+    const record: SavedDay = { id, savedAt: new Date().toLocaleString('en-IN'), draft: structuredClone(draft), finalSale, balance }
+    setHistory(items => [record, ...items.filter(item => item.id !== id)])
+  }
+  const historySummary: HistorySummary[] = history.map(item => ({ id: item.id, date: item.draft.date, note: item.draft.note, mode: item.draft.mode === 'allHsd' ? 'Mode 1' : 'Mode 2', finalSale: inr.format(item.finalSale), balance: inr.format(item.balance), savedAt: item.savedAt }))
+  const exportExcel = () => {
+    const detailRows: (string | number)[][] = [['Date', 'Mode', 'Note', 'T1 Opening', 'T1 Closing', 'T2 Opening', 'T2 Closing', 'T3 Opening', 'T3 Closing', 'T4 Opening', 'T4 Closing', 'Final Sale', 'Balance']]
+    history.forEach(item => detailRows.push([item.draft.date, item.draft.mode, item.draft.note, ...item.draft.readings[item.draft.mode].flatMap(reading => [Number(reading.morning) || 0, Number(reading.evening) || 0]), item.finalSale, item.balance]))
+    const paymentRows: (string | number)[][] = [['Date', 'Udhari', 'Paytm', 'F-Card', 'PhonePe', 'Bank', 'Kharche', 'Cash', 'Other']]
+    history.forEach(item => paymentRows.push([item.draft.date, ...Object.values(item.draft.payments).map(value => Number(value) || 0)]))
+    downloadBlob(createXlsx([{ name: 'Daily Closing', rows: detailRows }, { name: 'Payments', rows: paymentRows }]), `pump-book-${draft.date}.xlsx`)
+  }
+  const shareCurrent = async () => {
+    const lines = [`Pump Book — ${draft.date}`, draft.note || 'Daily closing', ...map.map((fuel, index) => `T${index + 1} ${fuel}: ${draft.readings[draft.mode][index].morning || '—'} → ${draft.readings[draft.mode][index].evening || '—'} = ${qty(diffs[index])} L`), `Final sale: ${inr.format(finalSale)}`, `Accounted: ${inr.format(accounted)}`, `Balance: ${inr.format(balance)}`, matched ? 'Status: MATCH' : 'Status: CHECK']
+    const text = lines.join('\n')
+    if (navigator.share) await navigator.share({ title: `Pump Book ${draft.date}`, text }).catch(() => undefined)
+    else { await navigator.clipboard.writeText(text); alert('Report clipboard में copy हो गई।') }
+  }
+  const backupData = async (password: string) => downloadBlob(await encryptedBackup({ version: 1, current: draft, history } satisfies BackupPayload, password), `pump-book-backup-${draft.date}.pumpbook`)
+  const restoreData = async (file: File, password: string) => {
+    try {
+      const restored = await decryptBackup(file, password) as BackupPayload
+      if (restored.version !== 1 || !Array.isArray(restored.history)) throw new Error('Invalid backup')
+      setDraft(sanitize(restored.current)); setHistory(restored.history); alert(`${restored.history.length} records restore हो गए।`)
+    } catch { alert('Backup open नहीं हुआ—password या file check करें।') }
+  }
 
   return <>
     <PrintReport
@@ -274,6 +312,14 @@ export default function App() {
           <div className="recon-grid"><Metric label="Final fuel sale" value={inr.format(finalSale)} /><Metric label="Total accounted" value={inr.format(accounted)} /><Metric label="Balance / fault" value={inr.format(balance)} danger={!matched} /></div>
           <div role="status" className={`match ${matched ? '' : 'check'}`}>{matched ? 'MATCH — हिसाब बराबर है' : `CHECK — ${inr.format(balance)} का difference`}</div>
         </section>
+
+        <DataHub
+          items={historySummary}
+          onSave={saveCurrentDay}
+          onOpen={id => { const item = history.find(record => record.id === id); if (item) setDraft(sanitize(item.draft)) }}
+          onDelete={id => { if (confirm('यह saved day delete करें?')) setHistory(items => items.filter(item => item.id !== id)) }}
+          onExcel={exportExcel} onShare={() => void shareCurrent()} onBackup={password => void backupData(password)} onRestore={(file, password) => void restoreData(file, password)}
+        />
 
         {saveError && <div className="alert">{saveError}</div>}
 

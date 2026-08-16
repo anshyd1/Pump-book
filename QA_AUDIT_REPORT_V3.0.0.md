@@ -179,19 +179,27 @@ The app currently locks pinch/double-tap zoom through viewport settings and pan-
 - Contains header metadata, four totalizers, fuel summary, eight payment modes, final reconciliation, status and three signature lines.
 - Automated Chromium PDF testing produced exactly **one page**.
 
-## 8. Build and PWA health
+## 8. Offline history, Excel and hybrid backup (3.1)
+- Daily Data Center can save/replace a closing by date and mode.
+- Saved days can be filtered by date, reopened into the calculator or deleted.
+- Generates a real OOXML `.xlsx` workbook locally with Daily Closing and Payments sheets; no vulnerable spreadsheet dependency is used.
+- Current report can be sent through Web Share/WhatsApp-compatible share targets, with clipboard fallback.
+- Hybrid storage remains offline-first and adds password-protected AES-GCM backup/restore files.
+- Backup contains the current draft and full saved history; wrong password fails without overwriting local data.
+
+## 9. Build and PWA health
 
 - React + TypeScript build: **Pass**
 - Vite production build: **Pass**
 - JavaScript bundle: approximately **238 kB / 76 kB gzip**
 - CSS bundle: approximately **29 kB / 7.3 kB gzip**
 - Payment artwork: local SVG
-- PWA cache version: `pump-book-v10`
-- App version: `3.0.0`
+- PWA cache version: `pump-book-v11`
+- App version: `3.1.0`
 
 ---
 
-## 9. Remaining product risks
+## 10. Remaining product risks
 
 ### High priority
 1. Add automated visual regression tests for every release.
@@ -214,6 +222,6 @@ The app currently locks pinch/double-tap zoom through viewport settings and pan-
 
 ---
 
-## 10. Release recommendation
+## 11. Release recommendation
 
 Version 2.2.1 is safe to deploy as a **repair release** for the reported clipping and scanner positioning problems. The supplied receipt now returns all four expected CumVolume values in browser testing. Before depending on it operationally, test at least five real morning/evening slip pairs from different lighting conditions and confirm every value manually.
