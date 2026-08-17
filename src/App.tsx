@@ -8,6 +8,7 @@ import type { HistorySummary } from './DataHub'
 import { createXlsx, decryptBackup, downloadBlob, encryptedBackup } from './dataTools'
 import type { PaymentKind } from './PaymentIcon'
 import type { ReadingSlot } from './receiptOcr'
+import { applySlipToPair } from './scanPairing'
 
 type Fuel = 'HSD' | 'MS'
 type Mode = 'allHsd' | 'mixed'
@@ -156,23 +157,11 @@ export default function App() {
     return { ...d, readings }
   })
   const updatePayment = (key: keyof Payments, value: string) => setDraft(d => ({ ...d, payments: { ...d.payments, [key]: value } }))
-  const applyScannedReadings = (values: string[], slot: ReadingSlot, dayVolumes: string[]) => setDraft(d => ({
+  const applyScannedReadings = (values: string[], slot: ReadingSlot, dayVolumes: string[], allowOppositeDerivation: boolean) => setDraft(d => ({
     ...d,
     readings: {
       ...d.readings,
-      [d.mode]: d.readings[d.mode].map((reading, index) => {
-        let morning = reading.morning, evening = reading.evening
-        const scanned = values[index], hasDayVolume = dayVolumes[index] !== '', dayVolume = num(dayVolumes[index])
-        if (slot === 'evening') {
-          if (scanned) evening = scanned
-          else if (morning && hasDayVolume) evening = (num(morning) + dayVolume).toFixed(3)
-          if (!morning && evening && hasDayVolume) morning = (num(evening) - dayVolume).toFixed(3)
-        } else {
-          // Morning slip केवल opening set करती है; zero ShDayVol से fake closing न बनाएँ।
-          if (scanned) morning = scanned
-        }
-        return { ...reading, morning, evening }
-      })
+      [d.mode]: applySlipToPair(d.readings[d.mode], values, slot, dayVolumes, allowOppositeDerivation)
     }
   }))
   const clearEntries = () => setDraft(d => ({

@@ -1,8 +1,34 @@
 import { createWorker, PSM } from 'tesseract.js'
-import { recognizeWithMlKit } from './nativeOcr'
+import { scanAndRecognizeNativeDocument } from './nativeOcr'
+import { associatePumpFields } from './structuredOcr'
+import type { FieldAssociation } from './structuredOcr'
 
 export type ReadingSlot = 'morning' | 'evening'
-export type ScanResult = { readings: string[]; dayVolumes: string[]; confidence: number; rawText: string; slipTime: string; suggestedSlot: ReadingSlot | null }
+export type StageTiming = { stage: string; durationMs: number }
+export type ScanDiagnostics = {
+  version: '4.1.3'
+  platform: 'android-native' | 'pwa'
+  source: { name: string; type: string; sizeBytes: number; width: number; height: number }
+  totalMs: number
+  stages: StageTiming[]
+  native?: {
+    processingMs: number
+    ocrMs: number
+    blocks: number
+    lines: number
+    associations: FieldAssociation[]
+  }
+}
+export type ScanResult = {
+  readings: string[]
+  dayVolumes: string[]
+  confidence: number
+  rawText: string
+  slipTime: string
+  suggestedSlot: ReadingSlot | null
+  previewUri?: string
+  diagnostics: ScanDiagnostics
+}
 
 type LoadedImage = { width: number; height: number; image: HTMLImageElement }
 type OcrWorker = Awaited<ReturnType<typeof createWorker>>
@@ -271,37 +297,92 @@ export function parseDayVolumes(raw: string): string[] {
 
 const LINE_TOP_RATIOS = [0.2734, 0.4785, 0.7080, 0.9717]
 
+export async function scanNativeReceipt(onProgress: (progress: number, status: string) => void, source: 'document' | 'gallery' = 'document'): Promise<ScanResult | null> {
+  onProgress(.05, source === 'gallery' ? 'native gallery' : 'document scanner')
+  const native = await scanAndRecognizeNativeDocument(source)
+  if (!native) return null
+  onProgress(.72, 'native structured')
+  const structured = associatePumpFields(native)
+  const readings = ['', '', '', ''], dayVolumes = ['', '', '', '']
+  structured.readings.forEach((value, index) => {
+    const verified = validForNozzle(value, index)
+    if (verified) readings[index] = verified
+  })
+  // Keep the existing conservative text parser only as a gap-filler. Geometry
+  // wins whenever ML Kit supplied a valid label/value association.
+  parseDocumentText(native.text).forEach((value, index) => {
+    const verified = validForNozzle(value, index)
+    if (!readings[index] && verified) readings[index] = verified
+  })
+  structured.dayVolumes.forEach((value, index) => { if (value) dayVolumes[index] = value })
+  parseDayVolumes(native.text).forEach((value, index) => { if (!dayVolumes[index] && value) dayVolumes[index] = value })
+  const processingMs = native.processingMs
+  const diagnostics: ScanDiagnostics = {
+    version: '4.1.3',
+    platform: 'android-native',
+    source: {
+      name: source === 'document' ? 'mlkit-perspective-corrected.jpg' : 'native-gallery-image.jpg',
+      type: 'image/jpeg',
+      sizeBytes: native.sizeBytes,
+      width: native.width,
+      height: native.height
+    },
+    totalMs: processingMs,
+    stages: [
+      { stage: 'native-ocr', durationMs: native.timings.ocrMs },
+      { stage: 'native-serialize-and-bridge', durationMs: Math.max(0, processingMs - native.timings.ocrMs) }
+    ],
+    native: {
+      processingMs,
+      ocrMs: native.timings.ocrMs,
+      blocks: native.blocks.length,
+      lines: native.lines.length,
+      associations: structured.associations
+    }
+  }
+  console.info('[PumpBookScan]', diagnostics)
+  onProgress(1, 'native structured')
+  return {
+    readings,
+    dayVolumes,
+    confidence: readings.filter(Boolean).length * 25,
+    rawText: `Native ML Kit structured (${structured.associations.length} associations):\n${native.text}`,
+    slipTime: '',
+    suggestedSlot: detectSlipSlot(native.text),
+    previewUri: native.previewUri,
+    diagnostics
+  }
+}
+
 export async function scanReceipt(file: File, onProgress: (progress: number, status: string) => void): Promise<ScanResult> {
-  const started = performance.now(), deadline = started + 12_000
+  const started = performance.now(), deadline = started + 12_000, stages: StageTiming[] = []
+  let stageStarted = started
+  const markStage = (stage: string) => {
+    const now = performance.now()
+    stages.push({ stage, durationMs: Math.round(now - stageStarted) })
+    stageStarted = now
+  }
   const loaded = await loadImage(file)
+  markStage('load-image')
   onProgress(.03, 'detecting receipt')
   const source = imageCanvas(loaded), normalized = normalizeReceipt(loaded)
+  markStage('detect-and-normalize')
   const width = source.width, height = source.height
   let stage = 0
   const readings = ['', '', '', ''], dayVolumes = ['', '', '', ''], texts: string[] = []
-  const filenameTime = file.name.match(/\d{8}(\d{2})\d{4}/)
-  let suggestedSlot: ReadingSlot | null = filenameTime ? (Number(filenameTime[1]) < 12 ? 'morning' : 'evening') : (new Date().getHours() < 12 ? 'morning' : 'evening')
+  // Camera/gallery filename time is when the photo was taken, not necessarily
+  // the time printed on the receipt. Only OCR of the printed Time may suggest a slot.
+  let suggestedSlot: ReadingSlot | null = null
   const hasTime = () => performance.now() < deadline
 
-  // Android APK: Google ML Kit runs on-device and normally returns in under a second.
-  onProgress(.12, 'native ml kit')
-  const nativeText = await recognizeWithMlKit(normalized)
-  if (nativeText) {
-    texts.push(`Native ML Kit:\n${nativeText}`)
-    parseDocumentText(nativeText).forEach((value, index) => { const verified = validForNozzle(value, index); if (verified) readings[index] = verified })
-    parseDayVolumes(nativeText).forEach((value, index) => { if (value) dayVolumes[index] = value })
-    suggestedSlot = detectSlipSlot(nativeText) ?? suggestedSlot
-    if (readings.filter(Boolean).length >= 2) {
-      onProgress(1, 'native ml kit')
-      return { readings, dayVolumes, confidence: readings.filter(Boolean).length * 25, rawText: texts.join('\n'), slipTime: '', suggestedSlot }
-    }
-  }
-
+  // Browser/PWA path remains intact as the offline fallback. Android's primary
+  // button uses scanNativeReceipt(), where a temp URI replaces Base64.
   workerLogger = (progress, status) => {
     if (status === 'recognizing text') onProgress(Math.min(.94, .08 + stage * .15 + progress * .12), 'recognizing text')
     else onProgress(.04, status)
   }
   const worker = await getOcrWorker()
+  markStage('tesseract-worker-ready')
   try {
     // Layout-independent first pass: firmware versions place CumVolume at different heights.
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN, tessedit_char_whitelist: '', preserve_interword_spaces: '1', user_defined_dpi: '300' })
@@ -310,6 +391,7 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
     suggestedSlot = detectSlipSlot(full.data.text) ?? suggestedSlot
     parseDocumentText(full.data.text).forEach((value, index) => { const verified = validForNozzle(value, index); if (verified) readings[index] = verified })
     parseDayVolumes(full.data.text).forEach((value, index) => { if (value) dayVolumes[index] = value })
+    markStage('tesseract-full-receipt')
 
     // OCR each missing nozzle block separately; this preserves tiny decimals and the torn T4 edge.
     if (readings.some(value => !value) && hasTime()) {
@@ -436,7 +518,17 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
       })
     }
 
+    markStage('tesseract-targeted-fallbacks')
+    const totalMs = Math.round(performance.now() - started)
+    const diagnostics: ScanDiagnostics = {
+      version: '4.1.3',
+      platform: 'pwa',
+      source: { name: file.name, type: file.type, sizeBytes: file.size, width: loaded.width, height: loaded.height },
+      totalMs,
+      stages
+    }
+    console.info('[PumpBookScan]', diagnostics)
     onProgress(1, 'recognizing text')
-    return { readings, dayVolumes, confidence: readings.filter(Boolean).length * 25, rawText: texts.join('\n'), slipTime: '', suggestedSlot }
+    return { readings, dayVolumes, confidence: readings.filter(Boolean).length * 25, rawText: texts.join('\n'), slipTime: '', suggestedSlot, diagnostics }
   } finally { workerLogger = null; releaseOcrWorkerLater() }
 }

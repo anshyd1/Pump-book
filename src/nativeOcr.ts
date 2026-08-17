@@ -1,37 +1,81 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 
-type MlKitResult = { text: string; width: number; height: number }
-interface MlKitOcrPlugin { recognize(options: { base64: string }): Promise<MlKitResult> }
+export type NativeBox = {
+  text: string
+  left: number
+  top: number
+  right: number
+  bottom: number
+  blockIndex: number
+  lineIndex?: number
+}
+export type NativeTextBlock = NativeBox & { lines: NativeBox[] }
+export type NativeMlKitResult = {
+  text: string
+  width: number
+  height: number
+  blocks: NativeTextBlock[]
+  lines: NativeBox[]
+  timings: { ocrMs: number; beforeSerializeMs: number; serializeMs: number; totalMs: number }
+}
+export type NativeDocumentResult = NativeMlKitResult & {
+  imageUri: string
+  previewUri: string
+  sizeBytes: number
+  processingMs: number
+}
+
+type ScannedDocument = { uri: string; sizeBytes: number }
+interface MlKitOcrPlugin {
+  scanDocument(): Promise<ScannedDocument>
+  pickImage(): Promise<ScannedDocument>
+  recognize(options: { uri: string }): Promise<NativeMlKitResult>
+}
 const MlKitOcr = registerPlugin<MlKitOcrPlugin>('MlKitOcr')
 
 export const nativeMlKitAvailable = () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
 
-const optimizedDataUrl = (source: HTMLCanvasElement): Promise<string> => new Promise((resolve, reject) => {
-  // Keep enough detail for ML Kit while avoiding a multi-megabyte synchronous WebView bridge payload.
-  const scale = Math.min(1, 1600 / Math.max(source.width, source.height))
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(source.width * scale)); canvas.height = Math.max(1, Math.round(source.height * scale))
-  canvas.getContext('2d')!.drawImage(source, 0, 0, canvas.width, canvas.height)
-  canvas.toBlob(blob => {
-    if (!blob) { reject(new Error('Native OCR image encode failed')); return }
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error ?? new Error('Native OCR image read failed'))
-    reader.readAsDataURL(blob)
-  }, 'image/jpeg', .88)
-})
+const withTimeout = <T>(work: Promise<T>, milliseconds: number, message: string): Promise<T> => Promise.race([
+  work,
+  new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error(message)), milliseconds))
+])
 
-export async function recognizeWithMlKit(canvas: HTMLCanvasElement): Promise<string | null> {
+/**
+ * Native happy path: ML Kit Document Scanner writes a perspective-corrected
+ * JPEG in app cache, then the WebView sends only that temporary content URI
+ * back to ML Kit Text Recognition. Image bytes never cross the JS bridge.
+ */
+export async function scanAndRecognizeNativeDocument(source: 'document' | 'gallery' = 'document'): Promise<NativeDocumentResult | null> {
   if (!nativeMlKitAvailable()) return null
   try {
-    const base64 = await optimizedDataUrl(canvas)
-    const result = await Promise.race([
-      MlKitOcr.recognize({ base64 }),
-      new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('Native ML Kit timeout')), 8_000))
-    ])
-    return result.text || null
+    const scanned = source === 'gallery' ? await MlKitOcr.pickImage() : await MlKitOcr.scanDocument()
+    // Start the performance clock only after the user confirms the corrected
+    // page, so camera framing time is not mixed into capture-to-result timing.
+    const processingStarted = performance.now()
+    const recognized = await withTimeout(
+      MlKitOcr.recognize({ uri: scanned.uri }),
+      8_000,
+      'Native ML Kit timeout'
+    )
+    const processingMs = Math.round(performance.now() - processingStarted)
+    console.info('[PumpBookScan]', {
+      stage: 'native-complete',
+      processingMs,
+      image: `${recognized.width}x${recognized.height}`,
+      blocks: recognized.blocks.length,
+      lines: recognized.lines.length,
+      nativeTimings: recognized.timings
+    })
+    return {
+      ...recognized,
+      imageUri: scanned.uri,
+      previewUri: Capacitor.convertFileSrc(scanned.uri),
+      sizeBytes: scanned.sizeBytes,
+      processingMs
+    }
   } catch (error) {
-    console.warn('Native ML Kit OCR unavailable, using Tesseract fallback', error)
-    return null
+    if (error instanceof Error && /(?:DOCUMENT_SCAN|IMAGE_PICK)_CANCELLED/.test(error.message)) return null
+    console.warn('[PumpBookScan] Native document scan unavailable; PWA upload remains available', error)
+    throw error
   }
 }
