@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "tsx --test tests/*.test.ts",
     "android:sync": "npm run build && cap sync android",
-    "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug"
+    "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "qr": "node scripts/generate-qr.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.8",
@@ -25,6 +26,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "qrcode": "^1.5.4",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vite": "^8.2.1"

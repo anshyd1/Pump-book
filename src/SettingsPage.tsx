@@ -17,6 +17,7 @@ type Props = {
   onCheckUpdate: () => void
   onInstallUpdate: () => void
   onOpenRelease: () => void
+  onOpenWelcome: () => void
 }
 
 const themes: { id: ThemeChoice; label: string; hint: string }[] = [
@@ -33,7 +34,7 @@ const wallpapers: { id: WallpaperChoice; label: string; hint: string }[] = [
   { id: 'none', label: 'Clean Ledger', hint: 'No wallpaper' }
 ]
 
-export default function SettingsPage({ preferences, onChange, onClearDraft, onClearHistory, historyCount, version, updateInfo, updateBusy, updateMessage, updateError, onCheckUpdate, onInstallUpdate, onOpenRelease }: Props) {
+export default function SettingsPage({ preferences, onChange, onClearDraft, onClearHistory, historyCount, version, updateInfo, updateBusy, updateMessage, updateError, onCheckUpdate, onInstallUpdate, onOpenRelease, onOpenWelcome }: Props) {
   const patch = (next: Partial<AppPreferences>) => onChange({ ...preferences, ...next })
   return <div className="page-stack settings-page">
     <section className="page-hero compact-hero">
@@ -77,6 +78,19 @@ export default function SettingsPage({ preferences, onChange, onClearDraft, onCl
       <div className="danger-actions">
         <button onClick={onClearDraft}><b>Clear current draft</b><small>Readings, scan evidence और payments</small></button>
         <button onClick={onClearHistory}><b>Delete saved history</b><small>Backup पहले बना लें</small></button>
+      </div>
+    </section>
+
+    <section className="card settings-section">
+      <div className="section-head"><div><p className="eyebrow">Spread the word</p><h2>Welcome &amp; share</h2><p className="section-sub">QR codes, download links और app tour</p></div></div>
+      <div className="danger-actions share-actions">
+        <button onClick={onOpenWelcome}><b>Open welcome page</b><small>Feature tour, QR codes और APK links</small></button>
+        <button onClick={() => {
+          const url = 'https://anshyd1.github.io/Pump-book/'
+          const text = 'Pump Book — petrol pump daily closing. Scan the shift slip, it reads the totalizer and does the maths. Free and offline.'
+          if (navigator.share) { void navigator.share({ title: 'Pump Book', text, url }).catch(() => undefined) }
+          else { void navigator.clipboard.writeText(`${text} ${url}`).catch(() => undefined) }
+        }}><b>Share Pump Book</b><small>WhatsApp, Telegram या link copy</small></button>
       </div>
     </section>
 

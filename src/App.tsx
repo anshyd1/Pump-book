@@ -8,6 +8,7 @@ import DataHub from './DataHub'
 import HomePage from './HomePage'
 import SettingsPage from './SettingsPage'
 import IntroSplash from './IntroSplash'
+import LandingPage from './LandingPage'
 import AppChrome from './AppChrome'
 import type { AppPage } from './AppChrome'
 import type { HistorySummary } from './DataHub'
@@ -83,6 +84,10 @@ const pageFromHash = (): AppPage => {
   return value === 'closing' || value === 'history' || value === 'settings' ? value : 'home'
 }
 
+/** The welcome/landing experience lives outside the four ledger pages. */
+const WELCOME_SEEN_KEY = 'pump-book-welcome-v1'
+const isWelcomeHash = () => window.location.hash.replace('#/', '') === 'welcome'
+
 function Field({ label, value, onChange, step = '0.01', placeholder, type = 'number' }: { label: string; value: string; onChange: (value: string) => void; step?: string; placeholder?: string; type?: 'number' | 'date' | 'text' }) {
   return <label className="field-label"><span>{label}</span><input inputMode={type === 'number' ? 'decimal' : undefined} type={type} step={type === 'number' ? step : undefined} value={value} placeholder={placeholder} onFocus={type === 'number' ? event => event.currentTarget.select() : undefined} onChange={event => onChange(event.target.value)}/></label>
 }
@@ -104,6 +109,11 @@ export default function App() {
     try { const raw = localStorage.getItem(HISTORY_KEY); return raw ? JSON.parse(raw) as SavedDay[] : [] } catch { return [] }
   })
   const [page, setPage] = useState<AppPage>(pageFromHash)
+  // Show the landing page on first run, or whenever #/welcome is opened/shared.
+  const [showWelcome, setShowWelcome] = useState(() => {
+    if (isWelcomeHash()) return true
+    try { return localStorage.getItem(WELCOME_SEEN_KEY) !== 'yes' } catch { return false }
+  })
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -189,7 +199,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preferences.autoUpdateCheck])
   useEffect(() => {
-    const onHash = () => setPage(pageFromHash())
+    const onHash = () => {
+      setPage(pageFromHash())
+      if (isWelcomeHash()) setShowWelcome(true)
+    }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
@@ -204,6 +217,19 @@ export default function App() {
     setPage(next)
     const hash = next === 'home' ? '#/' : `#/${next}`
     if (window.location.hash !== hash) window.location.hash = hash
+  }
+  /** Leave the landing page and remember that it has been seen. */
+  const leaveWelcome = (next: AppPage) => {
+    try { localStorage.setItem(WELCOME_SEEN_KEY, 'yes') } catch { /* storage may be blocked */ }
+    setShowWelcome(false)
+    navigate(next)
+    window.scrollTo({ top: 0 })
+  }
+  /** Reopen the landing page (Settings → About, or a shared #/welcome link). */
+  const openWelcome = () => {
+    setShowWelcome(true)
+    if (window.location.hash !== '#/welcome') window.location.hash = '#/welcome'
+    window.scrollTo({ top: 0 })
   }
   const doInstall = async () => {
     if (!installEvt) return
@@ -275,6 +301,13 @@ export default function App() {
   }
 
   const printFinal = canFinalize ? inr.format(finalSale) : 'NOT VERIFIED'
+
+  // The landing page replaces the ledger chrome entirely so it reads as a real
+  // welcome screen rather than a banner stacked above the app.
+  if (showWelcome) {
+    return <LandingPage onEnter={() => leaveWelcome('closing')} onDismiss={() => leaveWelcome('home')}/>
+  }
+
   return <>
     <IntroSplash reduceMotion={preferences.reduceMotion}/>
     <PrintReport
@@ -339,6 +372,7 @@ export default function App() {
       {page === 'settings' && <SettingsPage
         preferences={preferences} onChange={setPreferences} onClearDraft={confirmClearDraft} onClearHistory={confirmClearHistory}
         historyCount={history.length} version={VERSION} updateInfo={updateInfo} updateBusy={updateBusy} updateMessage={updateMessage} updateError={updateError}
+        onOpenWelcome={openWelcome}
         onCheckUpdate={() => void runUpdateCheck()} onInstallUpdate={() => void installUpdate()}
         onOpenRelease={() => { if (updateInfo?.releaseUrl) void openUpdateRelease(updateInfo.releaseUrl) }}
       />}
