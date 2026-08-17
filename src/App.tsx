@@ -33,7 +33,6 @@ type Draft = {
 }
 type SavedDay = { id: string; savedAt: string; draft: Draft; finalSale: number; balance: number }
 type BackupPayload = { version: 1; current: Draft; history: SavedDay[] }
-type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 
 const VERSION = '4.2.1'
 const productMap: Record<Mode, Fuel[]> = {
@@ -124,8 +123,6 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null)
-  const [standalone, setStandalone] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [updateMessage, setUpdateMessage] = useState('')
@@ -216,12 +213,6 @@ export default function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
-  useEffect(() => {
-    setStandalone(window.matchMedia('(display-mode: standalone)').matches)
-    const onPrompt = (event: Event) => { event.preventDefault(); setInstallEvt(event as BeforeInstallPromptEvent) }
-    window.addEventListener('beforeinstallprompt', onPrompt)
-    return () => window.removeEventListener('beforeinstallprompt', onPrompt)
-  }, [])
 
   const navigate = (next: AppPage) => {
     setPage(next)
@@ -240,11 +231,6 @@ export default function App() {
     setShowWelcome(true)
     if (window.location.hash !== '#/welcome') window.location.hash = '#/welcome'
     window.scrollTo({ top: 0 })
-  }
-  const doInstall = async () => {
-    if (!installEvt) return
-    await installEvt.prompt(); const choice = await installEvt.userChoice
-    if (choice.outcome === 'accepted') setInstallEvt(null)
   }
   const updateReading = (index: number, key: keyof Reading, value: string) => setDraft(current => ({ ...current, readings: { ...current.readings, [current.mode]: current.readings[current.mode].map((reading, at) => at === index ? { ...reading, [key]: value } : reading) } }))
   const updatePayment = (key: keyof Payments, value: string) => setDraft(current => ({ ...current, payments: { ...current.payments, [key]: value } }))
@@ -372,8 +358,7 @@ export default function App() {
           <section className="card"><div className="section-head"><div className="section-title"><span className="section-icon wallet-icon">▣</span><div><p className="eyebrow">Step 04 · Reconcile</p><h2>Payment, udhari &amp; cash</h2><p className="section-sub">Sale का पूरा मिलान</p></div></div><span className="soft-badge">Final step</span></div><div className="payment-grid">{(Object.entries({ udhari: 'Udhari', paytm: 'Paytm', fcard: 'F-Card', phonepe: 'PhonePe', bank: 'Bank', kharche: 'Kharche', cash: 'Cash', other: 'Other' }) as [PaymentKind, string][]).map(([key, label]) => <PaymentField key={key} kind={key} label={label} value={draft.payments[key]} onChange={value => updatePayment(key, value)}/>)}</div><div className="recon-grid"><Metric label="Final fuel sale" value={canFinalize ? inr.format(finalSale) : 'Not verified'}/><Metric label="Total accounted" value={inr.format(accounted)}/><Metric label="Balance / fault" value={canFinalize ? inr.format(balance) : '—'} danger={canFinalize && !matched}/></div><div role="status" className={`match ${matched ? '' : 'check'}`}>{!canFinalize ? 'WAIT — readings verification बाकी है' : matched ? 'MATCH — हिसाब बराबर है' : `CHECK — ${inr.format(balance)} का difference`}</div></section>
 
           {saveError && <div className="alert">{saveError}</div>}
-          <div className="actions"><div className="actions-left">{!standalone && installEvt && <button className="install-btn" onClick={doInstall}>📲 Install app</button>}<span className="save-status">{savedAt ? `Auto-saved ✓ ${savedAt}` : 'Auto-save on'}</span></div><div className="actions-right"><button className="secondary" onClick={confirmClearDraft}>Clear entries</button><button className="secondary" onClick={saveCurrentDay} disabled={!canFinalize}>＋ Save day</button><button className="primary" onClick={() => window.print()} disabled={!canFinalize}>🖨 Print report</button></div></div>
-          {!standalone && !installEvt && <p className="install-note">PWA ready: browser menu से “Add to Home Screen” चुनें।</p>}
+          <div className="actions"><div className="actions-left"><span className="save-status">{savedAt ? `Auto-saved ✓ ${savedAt}` : 'Auto-save on'}</span></div><div className="actions-right"><button className="secondary" onClick={confirmClearDraft}>Clear entries</button><button className="secondary" onClick={saveCurrentDay} disabled={!canFinalize}>＋ Save day</button><button className="primary" onClick={() => window.print()} disabled={!canFinalize}>🖨 Print report</button></div></div>
         </main>
         <footer><BrandMascot compact/><div><b>Pump Book · by Ansh</b><span>Faster, safer daily closing · Data आपके device पर रहता है</span></div></footer>
       </div>}

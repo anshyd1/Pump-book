@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import QrCode from './QrCode'
-import { APP_VERSION, ARM64_URL, ARMV7_URL, PWA_URL, REPO_URL, RELEASE_URL } from './qrCodes'
+import { APP_VERSION, ARM64_URL, ARMV7_URL, REPO_URL, RELEASE_URL, SHARE_URL } from './qrCodes'
 
 type Props = {
   onEnter: () => void
@@ -124,7 +124,7 @@ export default function LandingPage({ onEnter, onDismiss }: Props) {
 
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(PWA_URL)
+      await navigator.clipboard.writeText(SHARE_URL)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1800)
     } catch { setCopied(false) }
@@ -132,7 +132,7 @@ export default function LandingPage({ onEnter, onDismiss }: Props) {
 
   const nativeShare = async () => {
     if (navigator.share) {
-      await navigator.share({ title: 'Pump Book', text: shareText, url: PWA_URL }).catch(() => undefined)
+      await navigator.share({ title: 'Pump Book', text: shareText, url: SHARE_URL }).catch(() => undefined)
     } else { void copyLink() }
   }
 
@@ -310,11 +310,11 @@ export default function LandingPage({ onEnter, onDismiss }: Props) {
             <span className="ed-mono tiny">armeabi-v7a</span>
           </article>
           <article ref={track(16)}>
-            <p className="ed-get-tag">No install</p>
-            <h3>Web app</h3>
-            <QrCode target="pwa" size={158} tone="#111110" />
-            <a href={PWA_URL}>Open web app</a>
-            <span className="ed-mono tiny">Add to Home Screen</span>
+            <p className="ed-get-tag">Share it</p>
+            <h3>Send to a friend</h3>
+            <QrCode target="share" size={158} tone="#111110" />
+            <a href={SHARE_URL}>Open download page</a>
+            <span className="ed-mono tiny">pumpbook.vercel.app</span>
           </article>
         </div>
 
@@ -333,20 +333,20 @@ export default function LandingPage({ onEnter, onDismiss }: Props) {
             <h2>Know another<br />pump owner?</h2>
             <p>Send the link, or let them scan it straight off your screen.</p>
             <div className="ed-copy-row">
-              <input value={PWA_URL} readOnly aria-label="Pump Book link"
+              <input value={SHARE_URL} readOnly aria-label="Pump Book link"
                 onFocus={e => e.currentTarget.select()} />
               <button type="button" onClick={() => void copyLink()}>{copied ? 'Copied' : 'Copy'}</button>
             </div>
             <div className="ed-chips">
               <a className="ed-chip wa" target="_blank" rel="noopener noreferrer"
-                href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${PWA_URL}`)}`}>WhatsApp</a>
+                href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${SHARE_URL}`)}`}>WhatsApp</a>
               <a className="ed-chip tg" target="_blank" rel="noopener noreferrer"
-                href={`https://t.me/share/url?url=${encodeURIComponent(PWA_URL)}&text=${encodeURIComponent(shareText)}`}>Telegram</a>
+                href={`https://t.me/share/url?url=${encodeURIComponent(SHARE_URL)}&text=${encodeURIComponent(shareText)}`}>Telegram</a>
               <button type="button" className="ed-chip sys" onClick={() => void nativeShare()}>More…</button>
             </div>
           </div>
           <div className="ed-share-qr">
-            <QrCode target="pwa" size={190} tone="#111110" />
+            <QrCode target="share" size={190} tone="#111110" />
             <span className="ed-mono tiny">anshyd1.github.io/Pump-book</span>
           </div>
         </div>

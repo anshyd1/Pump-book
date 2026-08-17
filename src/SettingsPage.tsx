@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import BrandLogo from './BrandLogo'
 import QrCode from './QrCode'
-import { PWA_URL } from './qrCodes'
+import { SHARE_URL } from './qrCodes'
 import AppUpdateCard from './AppUpdateCard'
 import type { UpdateInfo } from './appUpdater'
 import type { AppPreferences, ThemeChoice, WallpaperChoice } from './preferences'
@@ -92,7 +92,7 @@ export default function SettingsPage({ preferences, onChange, onClearDraft, onCl
 
       <div className="share-qr-row">
         <div className="share-qr-card">
-          <QrCode target="pwa" size={150} label="Web app — कुछ install नहीं"/>
+          <QrCode target="share" size={150} label="Download page — link भेजें"/>
         </div>
         <div className="share-qr-card">
           <QrCode target="arm64" size={150} label="Android APK — ARM64"/>
@@ -100,9 +100,9 @@ export default function SettingsPage({ preferences, onChange, onClearDraft, onCl
       </div>
 
       <div className="share-link-row">
-        <input readOnly value={PWA_URL} aria-label="Pump Book link" onFocus={event => event.currentTarget.select()}/>
+        <input readOnly value={SHARE_URL} aria-label="Pump Book link" onFocus={event => event.currentTarget.select()}/>
         <button type="button" className={copied ? 'is-copied' : ''} onClick={() => {
-          navigator.clipboard.writeText(PWA_URL).then(() => {
+          navigator.clipboard.writeText(SHARE_URL).then(() => {
             setCopied(true)
             window.setTimeout(() => setCopied(false), 1800)
           }).catch(() => undefined)
@@ -111,14 +111,14 @@ export default function SettingsPage({ preferences, onChange, onClearDraft, onCl
 
       <div className="share-chip-row">
         <a className="share-chip wa" target="_blank" rel="noopener noreferrer"
-          href={`https://wa.me/?text=${encodeURIComponent(`${SHARE_TEXT} ${PWA_URL}`)}`}>WhatsApp</a>
+          href={`https://wa.me/?text=${encodeURIComponent(`${SHARE_TEXT} ${SHARE_URL}`)}`}>WhatsApp</a>
         <a className="share-chip tg" target="_blank" rel="noopener noreferrer"
-          href={`https://t.me/share/url?url=${encodeURIComponent(PWA_URL)}&text=${encodeURIComponent(SHARE_TEXT)}`}>Telegram</a>
+          href={`https://t.me/share/url?url=${encodeURIComponent(SHARE_URL)}&text=${encodeURIComponent(SHARE_TEXT)}`}>Telegram</a>
         <button type="button" className="share-chip sys" onClick={() => {
           if (navigator.share) {
-            void navigator.share({ title: 'Pump Book', text: SHARE_TEXT, url: PWA_URL }).catch(() => undefined)
+            void navigator.share({ title: 'Pump Book', text: SHARE_TEXT, url: SHARE_URL }).catch(() => undefined)
           } else {
-            void navigator.clipboard.writeText(`${SHARE_TEXT} ${PWA_URL}`).catch(() => undefined)
+            void navigator.clipboard.writeText(`${SHARE_TEXT} ${SHARE_URL}`).catch(() => undefined)
           }
         }}>More…</button>
         <button type="button" className="share-chip tour" onClick={onOpenWelcome}>Welcome page ↗</button>
