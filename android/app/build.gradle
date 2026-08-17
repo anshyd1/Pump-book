@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+def pumpBookSigningFile = new File(System.getProperty('user.home'), '.android/pumpbook-signing.properties')
+def pumpBookSigning = new Properties()
+if (pumpBookSigningFile.exists()) {
+    pumpBookSigningFile.withInputStream { pumpBookSigning.load(it) }
+}
+
 android {
     namespace "in.pumpbook.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,13 +13,23 @@ android {
         applicationId "in.pumpbook.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 420
-        versionName "4.2.0"
+        versionCode 421
+        versionName "4.2.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        pumpBookRelease {
+            if (pumpBookSigningFile.exists()) {
+                storeFile file(pumpBookSigning['storeFile'])
+                storePassword pumpBookSigning['storePassword']
+                keyAlias pumpBookSigning['keyAlias']
+                keyPassword pumpBookSigning['keyPassword']
+            }
         }
     }
     // Most of the old 46 MB APK was four ABI copies of libmlkit_google_ocr_pipeline.so.
@@ -27,7 +43,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            if (pumpBookSigningFile.exists()) signingConfig signingConfigs.pumpBookRelease
+        }
         release {
+            if (pumpBookSigningFile.exists()) signingConfig signingConfigs.pumpBookRelease
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

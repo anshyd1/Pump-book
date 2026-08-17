@@ -17,6 +17,8 @@ import type { ReadingSlot } from './receiptOcr'
 import { applySlipToPair, dayVolumeMismatches, extremeDifferenceOutliers } from './scanPairing'
 import { defaultPreferences, loadPreferences } from './preferences'
 import type { AppPreferences } from './preferences'
+import { checkForAppUpdate, installAppUpdate, openUpdateRelease } from './appUpdater'
+import type { UpdateInfo } from './appUpdater'
 
 type Fuel = 'HSD' | 'MS'
 type Mode = 'allHsd' | 'mixed'
@@ -32,7 +34,7 @@ type SavedDay = { id: string; savedAt: string; draft: Draft; finalSale: number; 
 type BackupPayload = { version: 1; current: Draft; history: SavedDay[] }
 type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 
-const VERSION = '4.2.0'
+const VERSION = '4.2.1'
 const productMap: Record<Mode, Fuel[]> = {
   allHsd: ['HSD', 'HSD', 'HSD', 'HSD'],
   mixed: ['MS', 'HSD', 'MS', 'HSD']
@@ -107,6 +109,10 @@ export default function App() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null)
   const [standalone, setStandalone] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateMessage, setUpdateMessage] = useState('')
+  const [updateError, setUpdateError] = useState('')
 
   const map = productMap[draft.mode]
   const fuels = useMemo(() => Array.from(new Set(map)), [map])
@@ -128,6 +134,34 @@ export default function App() {
   const canFinalize = readingsComplete && !hasNegative && volumeIssues.length === 0 && differenceOutliers.length === 0
   const matched = canFinalize && Math.abs(balance) <= 0.05
 
+  const runUpdateCheck = async (silent = false) => {
+    if (!silent) { setUpdateBusy(true); setUpdateMessage(''); setUpdateError('') }
+    try {
+      const info = await checkForAppUpdate(VERSION)
+      setUpdateInfo(info)
+      if (!silent) setUpdateMessage(info.updateAvailable ? `Version ${info.latestVersion} available है।` : 'Latest version installed है।')
+    } catch (error) {
+      if (!silent) setUpdateError(error instanceof Error ? error.message : 'Update check failed')
+    } finally { if (!silent) setUpdateBusy(false) }
+  }
+  const installUpdate = async () => {
+    if (!updateInfo) { await runUpdateCheck(); return }
+    if (updateInfo.platform === 'pwa') {
+      setUpdateMessage('PWA files refresh हो रहे हैं…')
+      const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined)
+      await registration?.update().catch(() => undefined)
+      window.location.reload(); return
+    }
+    setUpdateBusy(true); setUpdateError(''); setUpdateMessage('APK securely download हो रहा है…')
+    try {
+      const result = await installAppUpdate(updateInfo)
+      if (result.permissionRequired) setUpdateMessage('Android Settings में “Allow from this source” ON करके वापस आएँ और Update दोबारा दबाएँ।')
+      else if (result.installerLaunched) setUpdateMessage('Download verified है। Android installer में Update confirm करें।')
+      else setUpdateMessage(result.message || 'Update ready है।')
+    } catch (error) { setUpdateError(error instanceof Error ? error.message : 'Update install failed') }
+    finally { setUpdateBusy(false) }
+  }
+
   const firstRun = useRef(true)
   useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return }
@@ -147,6 +181,13 @@ export default function App() {
     root.dataset.density = preferences.density
     root.classList.toggle('reduce-motion', preferences.reduceMotion)
   }, [preferences])
+  useEffect(() => {
+    if (!preferences.autoUpdateCheck) return
+    const timer = window.setTimeout(() => { void runUpdateCheck(true) }, 2_500)
+    return () => window.clearTimeout(timer)
+    // Auto-check is deliberately keyed only to the user preference.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferences.autoUpdateCheck])
   useEffect(() => {
     const onHash = () => setPage(pageFromHash())
     window.addEventListener('hashchange', onHash)
@@ -245,6 +286,7 @@ export default function App() {
       finalSale={printFinal} accounted={inr.format(accounted)} balance={canFinalize ? inr.format(balance) : 'NOT VERIFIED'} matched={matched}
     />
     <AppChrome page={page} drawerOpen={drawerOpen} onDrawer={setDrawerOpen} onNavigate={navigate} onPrint={() => canFinalize ? window.print() : window.alert('Print रोका गया: पहले सभी readings verify करें।')} version={VERSION}>
+      {updateInfo?.updateAvailable && page !== 'settings' && <button className="global-update-banner" onClick={() => navigate('settings')}><span>⇧</span><b>Pump Book {updateInfo.latestVersion} available</b><small>Tap to update inside app</small><i>›</i></button>}
       {page === 'home' && <HomePage
         date={draft.date} note={draft.note} mode={draft.mode === 'mixed' ? 'Mode 2 · MS / HSD / MS / HSD' : 'Mode 1 · All HSD'}
         verified={verifiedReadings} complete={readingsComplete} valid={!hasNegative && volumeIssues.length === 0 && differenceOutliers.length === 0}
@@ -294,7 +336,12 @@ export default function App() {
       </div>}
 
       {page === 'history' && <DataHub items={historySummary} onSave={saveCurrentDay} onOpen={openRecord} onDelete={id => { if (window.confirm('यह saved day delete करें?')) setHistory(items => items.filter(item => item.id !== id)) }} onExcel={exportExcel} onShare={() => void shareCurrent()} onBackup={password => void backupData(password)} onRestore={(file, password) => void restoreData(file, password)}/>}
-      {page === 'settings' && <SettingsPage preferences={preferences} onChange={setPreferences} onClearDraft={confirmClearDraft} onClearHistory={confirmClearHistory} historyCount={history.length} version={VERSION}/>}
+      {page === 'settings' && <SettingsPage
+        preferences={preferences} onChange={setPreferences} onClearDraft={confirmClearDraft} onClearHistory={confirmClearHistory}
+        historyCount={history.length} version={VERSION} updateInfo={updateInfo} updateBusy={updateBusy} updateMessage={updateMessage} updateError={updateError}
+        onCheckUpdate={() => void runUpdateCheck()} onInstallUpdate={() => void installUpdate()}
+        onOpenRelease={() => { if (updateInfo?.releaseUrl) void openUpdateRelease(updateInfo.releaseUrl) }}
+      />}
     </AppChrome>
   </>
 }

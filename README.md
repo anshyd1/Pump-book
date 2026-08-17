@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://anshyd1.github.io/Pump-book/"><img alt="Live PWA" src="https://img.shields.io/badge/OPEN-LIVE_PWA-0B9078?style=for-the-badge&logo=pwa&logoColor=white"></a>
-  <a href="https://github.com/anshyd1/Pump-book/releases/tag/v4.2.0"><img alt="Release" src="https://img.shields.io/badge/RELEASE-v4.2.0-FFB633?style=for-the-badge&logo=android&logoColor=1a2d31"></a>
+  <a href="https://github.com/anshyd1/Pump-book/releases/tag/v4.2.1"><img alt="Release" src="https://img.shields.io/badge/RELEASE-v4.2.1-FFB633?style=for-the-badge&logo=android&logoColor=1a2d31"></a>
   <img alt="OCR" src="https://img.shields.io/badge/OCR-ON_DEVICE-2878FF?style=for-the-badge&logo=googlelens&logoColor=white">
   <img alt="Privacy" src="https://img.shields.io/badge/DATA-PRIVATE_%26_OFFLINE-6F42C1?style=for-the-badge&logo=shield&logoColor=white">
 </p>
@@ -20,25 +20,39 @@
 | Target | Download | Best for |
 |---|---|---|
 | **Live PWA** | **[Open Pump Book](https://anshyd1.github.io/Pump-book/)** | Browser, desktop and Add to Home Screen |
-| **Android ARM64** | **[Download APK](https://github.com/anshyd1/Pump-book/releases/download/v4.2.0/Pump-Book-4.2.0-arm64-debug.apk)** | Most phones released after 2017 |
-| **Android ARMv7** | **[Download APK](https://github.com/anshyd1/Pump-book/releases/download/v4.2.0/Pump-Book-4.2.0-armv7-debug.apk)** | Older 32-bit Android phones |
+| **Android ARM64** | **[Download APK](https://github.com/anshyd1/Pump-book/releases/download/v4.2.1/Pump-Book-4.2.1-arm64.apk)** | Most phones released after 2017 |
+| **Android ARMv7** | **[Download APK](https://github.com/anshyd1/Pump-book/releases/download/v4.2.1/Pump-Book-4.2.1-armv7.apk)** | Older 32-bit Android phones |
 
 The APK uses bundled Google ML Kit Text Recognition for fast, on-device OCR. The installable PWA remains the offline fallback.
 
-> **One-time 4.1.3 → 4.2.0 test-build transition:** the earlier ephemeral debug signing key was not retained. Android may require: **Backup in 4.1.3 → uninstall 4.1.3 → install 4.2.0 → Restore backup**. The package name remains `in.pumpbook.app`.
+> **One-time 4.1.3 → 4.2.1 bootstrap:** 4.1.3 does not contain updater code, and its earlier ephemeral debug signing key was not retained. Android therefore requires: **Backup in 4.1.3 → uninstall 4.1.3 → install 4.2.1 → Restore backup**. After updater-enabled 4.2.1 is installed, future same-signed releases can be checked, downloaded and opened in Android’s installer from **Settings → App updates**.
+
+### In-app update system
+
+- Automatic background release check (user-toggleable)
+- Correct ARM64/ARMv7 asset selected from the phone ABI
+- Download remains inside Pump Book’s private cache
+- Optional SHA-256 verification from `SHA256SUMS.txt`
+- Repository/HTTPS allowlist and 80 MB safety ceiling
+- Android’s official package installer provides the required final confirmation
+- PWA service worker continues updating browser installs automatically
+
+Android deliberately does not allow a normal app to install itself silently; Pump Book does not request root/device-owner access.
 
 ### APK integrity
 
 ```text
-f842a34dde9ea1f0e3662376ecac75f50b972e663cee82eca5c238c26770b09a  Pump-Book-4.2.0-arm64-debug.apk
-2d3eeaf00ad55640e78d8efbb56a458271a063fcb14e9abb9ad120a6dc92ae5d  Pump-Book-4.2.0-armv7-debug.apk
+b196babf56d576abb32213dd21ed84af05d747c75931c4ea7b44cceec55c0703  Pump-Book-4.2.1-arm64.apk
+339fad97740eaf3143040caffdc2a4f4d8ca17d50c534bb1b2292b801ca3968e  Pump-Book-4.2.1-armv7.apk
 ```
 
 Both APKs verify with Android APK Signature Scheme v1 and v2.
 
 ---
 
-## ✨ What is new in 4.2
+## ✨ What is new in 4.2.1
+
+> **New:** built-in GitHub release updater with Auto-check, ABI selection, secure download, checksum support and Android installer hand-off.
 
 <table>
 <tr><td width="50%" valign="top">
@@ -263,6 +277,8 @@ GitHub Actions deploys the PWA after a push to `main`.
 - Huge-positive T1 mismatch is caught by `ShDayVol`
 - Magnitude-independent cross-nozzle outlier hold works when DayVol is unreadable
 - Full generated pair reconciles to all eight expected readings
+- Android updater accepts only this repository’s HTTPS release APK path
+- Updater semantic-version and ARM64/ARMv7 asset-selection policy
 
 ---
 

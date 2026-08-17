@@ -1,4 +1,6 @@
 import BrandLogo from './BrandLogo'
+import AppUpdateCard from './AppUpdateCard'
+import type { UpdateInfo } from './appUpdater'
 import type { AppPreferences, ThemeChoice, WallpaperChoice } from './preferences'
 
 type Props = {
@@ -8,6 +10,13 @@ type Props = {
   onClearHistory: () => void
   historyCount: number
   version: string
+  updateInfo: UpdateInfo | null
+  updateBusy: boolean
+  updateMessage: string
+  updateError: string
+  onCheckUpdate: () => void
+  onInstallUpdate: () => void
+  onOpenRelease: () => void
 }
 
 const themes: { id: ThemeChoice; label: string; hint: string }[] = [
@@ -24,13 +33,19 @@ const wallpapers: { id: WallpaperChoice; label: string; hint: string }[] = [
   { id: 'none', label: 'Clean Ledger', hint: 'No wallpaper' }
 ]
 
-export default function SettingsPage({ preferences, onChange, onClearDraft, onClearHistory, historyCount, version }: Props) {
+export default function SettingsPage({ preferences, onChange, onClearDraft, onClearHistory, historyCount, version, updateInfo, updateBusy, updateMessage, updateError, onCheckUpdate, onInstallUpdate, onOpenRelease }: Props) {
   const patch = (next: Partial<AppPreferences>) => onChange({ ...preferences, ...next })
   return <div className="page-stack settings-page">
     <section className="page-hero compact-hero">
       <div><span className="page-kicker">PERSONALISE YOUR LEDGER</span><h1>App settings</h1><p>Theme, wallpaper और daily defaults—सब offline और इसी device पर।</p></div>
       <BrandLogo compact/>
     </section>
+
+    <AppUpdateCard
+      version={version} info={updateInfo} busy={updateBusy} message={updateMessage} error={updateError}
+      autoCheck={preferences.autoUpdateCheck} onAutoCheck={value => patch({ autoUpdateCheck: value })}
+      onCheck={onCheckUpdate} onInstall={onInstallUpdate} onRelease={onOpenRelease}
+    />
 
     <section className="card settings-section">
       <div className="section-head"><div><p className="eyebrow">Appearance</p><h2>Theme</h2></div><span className="soft-badge">Instant preview</span></div>

@@ -6,7 +6,7 @@
 
 Pump Book is an offline-first React + TypeScript PWA and Capacitor Android app for petrol-pump daily closing. It scans IndianOil-style shift totalizer receipts, pairs explicit Morning/Opening and Evening/Closing readings, calculates HSD/MS fuel sale, reconciles payments, saves local history and exports reports.
 
-Current source version: **4.2.0** (`versionCode 420`).
+Current source version: **4.2.1** (`versionCode 421`).
 
 ## Non-negotiable architecture
 
@@ -24,6 +24,8 @@ Current source version: **4.2.0** (`versionCode 420`).
 12. If DayVol is unavailable, an extreme cross-nozzle outlier safety hold catches magnitude-independent impossible positive differences.
 13. Incomplete/invalid readings must show a safety hold, not a final amount.
 14. Preserve the capture-to-result target of under two seconds on the Android native path.
+15. The updater may download only HTTPS APK assets under `anshyd1/Pump-book/releases/download/` and must use Android’s user-confirmed package installer—never root or silent install.
+16. Future APK updates require the same signing certificate. Do not rotate or delete the 4.2.1+ signing key without planning a migration.
 
 ## 4.2 UI structure
 
@@ -95,12 +97,14 @@ Ten TypeScript tests cover:
 
 ## Release build facts
 
-Local 4.2.0 APKs are ABI-specific:
+Local 4.2.1 APKs are ABI-specific:
 
-- ARM64: `Pump-Book-4.2.0-arm64-debug.apk`
-- ARMv7: `Pump-Book-4.2.0-armv7-debug.apk`
+- ARM64: `Pump-Book-4.2.1-arm64.apk`
+- ARMv7: `Pump-Book-4.2.1-armv7.apk`
 
-The old 4.1.3 debug signing key was ephemeral and was deleted during an explicit workspace cleanup. It cannot be reconstructed from the published APK. A 4.1.3 → 4.2.0 install may require backup, uninstall, install and restore. Do not hide this from users. A production deployment should use a separately secured long-lived release key.
+The old 4.1.3 debug signing key was ephemeral and was deleted during an explicit workspace cleanup. It cannot be reconstructed from the published APK. A 4.1.3 → 4.2.1 install requires backup, uninstall, install and restore. Do not hide this from users.
+
+Version 4.2.1 establishes a long-lived update certificate documented in `docs/ANDROID_SIGNING.md`. Its private keystore/password live only in the controlled workspace under owner-only `~/.android/` files and must never be committed or echoed. Every future release must match that documented SHA-256 certificate or the in-app updater cannot perform an Android update.
 
 ## Repository and publication
 

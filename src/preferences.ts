@@ -5,6 +5,7 @@ export type AppPreferences = {
   theme: ThemeChoice
   wallpaper: WallpaperChoice
   reduceMotion: boolean
+  autoUpdateCheck: boolean
   density: DensityChoice
   defaultMode: 'allHsd' | 'mixed'
   defaultHsdRate: string
@@ -17,6 +18,7 @@ export const defaultPreferences: AppPreferences = {
   theme: 'system',
   wallpaper: 'fuel-aurora',
   reduceMotion: false,
+  autoUpdateCheck: true,
   density: 'comfortable',
   defaultMode: 'mixed',
   defaultHsdRate: '95.50',

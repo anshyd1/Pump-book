@@ -6,7 +6,7 @@ import type { FieldAssociation } from './structuredOcr'
 export type ReadingSlot = 'morning' | 'evening'
 export type StageTiming = { stage: string; durationMs: number }
 export type ScanDiagnostics = {
-version: '4.2.0'
+version: '4.2.1'
   platform: 'android-native' | 'pwa'
   source: { name: string; type: string; sizeBytes: number; width: number; height: number }
   totalMs: number
@@ -334,7 +334,7 @@ export async function scanNativeReceipt(onProgress: (progress: number, status: s
   parseDayVolumes(native.text).forEach((value, index) => { if (!dayVolumes[index] && value) dayVolumes[index] = value })
   const processingMs = native.processingMs
   const diagnostics: ScanDiagnostics = {
-    version: '4.2.0',
+    version: '4.2.1',
     platform: 'android-native',
     source: {
       name: source === 'document' ? 'mlkit-perspective-corrected.jpg' : 'native-gallery-image.jpg',
@@ -537,7 +537,7 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
     markStage('tesseract-targeted-fallbacks')
     const totalMs = Math.round(performance.now() - started)
     const diagnostics: ScanDiagnostics = {
-      version: '4.2.0',
+      version: '4.2.1',
       platform: 'pwa',
       source: { name: file.name, type: file.type, sizeBytes: file.size, width: loaded.width, height: loaded.height },
       totalMs,
