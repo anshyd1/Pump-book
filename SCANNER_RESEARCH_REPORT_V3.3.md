@@ -81,6 +81,22 @@ A low-quality capture shows a specific warning with **Retake** and **Use anyway*
 
 Pump Book intentionally leaves a field blank when it cannot verify the complete cumulative number. Examples such as `842170.070`, `.178`, or `30606.996` may be recognizable fragments, but automatically adding assumed leading digits is unsafe for a financial closing app.
 
+## Field photos received on 17 August: root cause and retest
+
+The failing screenshots supplied two new Pump S.No. `21100762` receipts. Their totalizers are around 110k–502k, while the earlier Pump S.No. `21060975` receipt ranged from 133k to 4.1m. An earlier safety rule incorrectly encoded the old machine's magnitude per nozzle and rejected valid readings from the new machine. That rule has been removed.
+
+The new firmware also prints longer nozzle blocks, so CumVolume appears at different vertical positions. Version 3.3.1 now runs a high-resolution, layout-independent receipt pass before coordinate fallbacks.
+
+Actual browser retest:
+
+| Actual field photo | Verified result |
+|---|---|
+| 16/08/2026 19:01:59 | T1 `499590.788`, T2 `502042.401`, T3 `110544.109`; T4 remains unverified |
+| 16/08/2026 07:23:47 | T1 `499243.148`, T3 `110538.129`, T4 `478449.884`; T2 remains unverified |
+| Earlier Pump 21060975 | all four readings correct |
+
+The remaining morning T2 and evening T4 digits are crossed by pen marks / edge perspective in the supplied photos. The app intentionally leaves those values blank rather than fabricating a digit. The paired slips show the expected values visually as approximately T2 opening `501071.921` and T4 closing `478519.314`, but those should be confirmed by the operator.
+
 ## Required next architecture for Paytm-level reliability
 
 ### Option A — Browser OpenCV (offline, larger app)

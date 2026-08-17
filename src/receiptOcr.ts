@@ -23,20 +23,18 @@ const releaseOcrWorkerLater = () => {
 
 const candidateNumbers = (value: string): string[] => {
   // Horizontal OCR gaps हटाएँ, लेकिन lines को कभी concatenate न करें—वरना दो अलग numbers मिलकर fake decimal बनाते हैं।
-  const fixed = value.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/,/g, '.').replace(/[ \t]+/g, '')
+  const fixed = value.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/[%]/g, '8').replace(/[Gg](?=\d)/g, '4').replace(/,/g, '.').replace(/[ \t]+/g, '')
   return Array.from(fixed.matchAll(/(\d{4,9})\.(\d{3})/g))
     .map(match => `${match[1]}.${match[2]}`)
     .filter(result => Number(result) >= 10_000 && Number(result) < 10_000_000)
 }
 const numberFrom = (value: string): string => candidateNumbers(value)[0] ?? ''
 const largestNumberFrom = (value: string): string => candidateNumbers(value).sort((a, b) => Number(b) - Number(a))[0] ?? ''
-// This four-nozzle installation already has six/seven-digit cumulative meters.
-// Reject shortened OCR fragments (for example 42170.070 or a CumSale tail).
-const validForNozzle = (value: string, index: number) => {
+// All current meters print six or more integer digits. Never hard-code a pump's magnitude:
+// different Pump S.No. machines can have completely different cumulative ranges.
+const validForNozzle = (value: string, _index: number) => {
   if (!value) return ''
-  const minimumIntegerDigits = [6, 7, 6, 7][index]
-  const pumpSafeMinimum = [500_000, 1_000_000, 100_000, 3_000_000][index]
-  return value.split('.')[0].length >= minimumIntegerDigits && Number(value) >= pumpSafeMinimum ? value : ''
+  return value.split('.')[0].length >= 6 && Number(value) >= 10_000 && Number(value) < 10_000_000 ? value : ''
 }
 
 const loadImage = (file: File): Promise<LoadedImage> => new Promise((resolve, reject) => {
@@ -186,16 +184,32 @@ const documentCanvas = (image: HTMLCanvasElement, angle = 0): HTMLCanvasElement 
   return canvas
 }
 
-const markerRegex = /[n0o]\s*[o0]?\s*[z2]\s*[z2]\s*l\s*e\s*n\s*[o0]\s*([0-9oOIl|zZsS])/gi
-const labelRegex = /[cs]\s*[uoy]\s*m\s*v\s*[o0]\s*l\s*[uoy]\s*m\s*[eoc]?\s*:?/gi
+const markerRegex = /[n0o]\s*[o0]?\s*[z2]\s*[z2]\s*l\s*e\s*n\s*[o0]\s*([0-9oOIl|zZsS?/dD])/gi
+const labelRegex = /[cs]?\s*[uoy]\s*m\s*v\s*[o0]\s*l?\s*[uoy]\s*m\s*[eoc]?\s*:?/gi
 
-const markerNumber = (char: string) => Number(char.replace(/[oO]/g, '0').replace(/[Il|]/g, '1').replace(/[zZ]/g, '2').replace(/[sS]/g, '5'))
+const markerNumber = (char: string) => Number(char.replace(/[oO]/g, '0').replace(/[Il|]/g, '1').replace(/[zZ?/]/g, '2').replace(/[dD]/g, '4').replace(/[sS]/g, '5'))
 const cumVolumeFromSection = (text: string) => {
   for (const label of text.matchAll(labelRegex)) {
     const value = numberFrom(text.slice(label.index! + label[0].length, label.index! + label[0].length + 100))
     if (value) return value
   }
   return ''
+}
+const cropBelowCumVolume = (section: HTMLCanvasElement, tsv: string | null): HTMLCanvasElement | null => {
+  if (!tsv) return null
+  const words = tsv.split('\n').slice(1).map(line => line.split('\t')).filter(columns => columns.length >= 12)
+  const label = words.find(columns => {
+    const word = columns.slice(11).join(' ').toLowerCase().replace(/[^a-z]/g, '')
+    return /cumv|sumv|umv|volume/.test(word)
+  })
+  if (!label) return null
+  const top = Number(label[7]), wordHeight = Number(label[10])
+  if (!Number.isFinite(top) || !Number.isFinite(wordHeight)) return null
+  const sy = Math.max(0, Math.round(top + wordHeight * .9)), sh = Math.min(section.height - sy, Math.max(48, Math.round(wordHeight * 1.85)))
+  const canvas = document.createElement('canvas'), scale = Math.min(2.5, 2400 / section.width)
+  canvas.width = Math.round(section.width * scale); canvas.height = Math.round(sh * scale)
+  canvas.getContext('2d')!.drawImage(section, 0, sy, section.width, sh, 0, 0, canvas.width, canvas.height)
+  return canvas
 }
 
 export function parseDocumentText(raw: string): string[] {
@@ -247,9 +261,40 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
   const hasTime = () => performance.now() < deadline
 
   try {
-    // Fast path: five small OCR jobs. A clean, straight slip finishes here.
+    // Layout-independent first pass: firmware versions place CumVolume at different heights.
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN, tessedit_char_whitelist: '', preserve_interword_spaces: '1', user_defined_dpi: '300' })
+    const full = await worker.recognize(normalized)
+    texts.push(`Full receipt:\n${full.data.text}`); stage += 1
+    parseDocumentText(full.data.text).forEach((value, index) => { const verified = validForNozzle(value, index); if (verified) readings[index] = verified })
+
+    // OCR each missing nozzle block separately; this preserves tiny decimals and the torn T4 edge.
+    if (readings.some(value => !value) && hasTime()) {
+      const ranges = [[.13, .42], [.38, .64], [.60, .84], [.79, 1]]
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '', preserve_interword_spaces: '1' })
+      for (let index = 0; index < 4 && hasTime(); index += 1) {
+        if (readings[index]) continue
+        const [from, to] = ranges[index], top = Math.round(normalized.height * from), bottomY = Math.round(normalized.height * to)
+        const section = document.createElement('canvas'); section.width = normalized.width; section.height = bottomY - top
+        section.getContext('2d')!.drawImage(normalized, 0, top, normalized.width, section.height, 0, 0, section.width, section.height)
+        const { data } = await worker.recognize(section, {}, { text: true, tsv: true })
+        let verified = validForNozzle(cumVolumeFromSection(data.text), index)
+        const valueStrip = cropBelowCumVolume(section, data.tsv)
+        if (!verified && valueStrip && hasTime()) {
+          await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,' })
+          const precise = await worker.recognize(valueStrip)
+          verified = validForNozzle(numberFrom(precise.data.text), index)
+          texts.push(`Section precise T${index + 1}: ${precise.data.text}`)
+          await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '', preserve_interword_spaces: '1' })
+        }
+        if (verified) readings[index] = verified
+        texts.push(`Section T${index + 1}: ${data.text}`); stage += 1
+      }
+    }
+
+    // Fast coordinate fallback only for fields the document parser missed.
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,', user_defined_dpi: '300' })
     for (let index = 0; index < 4; index += 1) {
+      if (readings[index]) continue
       const top = Math.min(height - 1, Math.max(0, Math.round(height * LINE_TOP_RATIOS[index])))
       const { data } = await worker.recognize(source, { rectangle: {
         left: Math.round(width * .30), top, width: Math.round(width * .55),
@@ -259,12 +304,30 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
       texts.push(`Fast T${index + 1}: ${data.text}`); stage += 1
     }
 
-    // T1 is always verified once because its thermal line is faint on this pump.
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '0123456789.,' })
-    const t1 = await worker.recognize(thresholdCrop(source, width, height, 130))
-    const verifiedT1 = validForNozzle(largestNumberFrom(t1.data.text), 0)
-    if (verifiedT1) readings[0] = verifiedT1
-    texts.push(`T1 verify: ${t1.data.text}`); stage += 1
+    // Newer shift-report firmware prints longer nozzle blocks; try its calibrated line positions only for missing fields.
+    const longLayoutRatios = [.37, .568, .758, .958]
+    if (readings.some(value => !value) && hasTime()) {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,' })
+      for (let index = 0; index < 4; index += 1) {
+        if (readings[index]) continue
+        const top = Math.min(height - 1, Math.round(height * longLayoutRatios[index]))
+        const { data } = await worker.recognize(source, { rectangle: {
+          left: Math.round(width * .18), top, width: Math.round(width * .68),
+          height: Math.max(55, Math.min(height - top, Math.round(height * .026)))
+        } })
+        readings[index] = validForNozzle(numberFrom(data.text), index)
+        texts.push(`Long-layout T${index + 1}: ${data.text}`); stage += 1
+      }
+    }
+
+    // Faded T1 gets binary verification only when both layout passes missed it.
+    if (!readings[0] && hasTime()) {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '0123456789.,' })
+      const primary = await worker.recognize(thresholdCrop(source, width, height, 130))
+      const primaryValue = validForNozzle(largestNumberFrom(primary.data.text), 0)
+      texts.push(`T1 verify: ${primary.data.text}`); stage += 1
+      if (primaryValue) readings[0] = primaryValue
+    }
 
     // Faded T1 gets at most two extra binary thresholds, only when the primary verification failed.
     if (!readings[0] && hasTime()) {
@@ -291,6 +354,18 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
         readings[index] = validForNozzle(numberFrom(data.text), index)
         texts.push(`Crop T${index + 1}: ${data.text}`); stage += 1
       }
+    }
+
+    // T4 sits at the torn bottom edge; OCR that final receipt section at full crop resolution.
+    if (!readings[3] && hasTime()) {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '', preserve_interword_spaces: '1' })
+      const bottom = document.createElement('canvas'), top = Math.round(normalized.height * .80)
+      bottom.width = normalized.width; bottom.height = normalized.height - top
+      bottom.getContext('2d')!.drawImage(normalized, 0, top, normalized.width, bottom.height, 0, 0, bottom.width, bottom.height)
+      const { data } = await worker.recognize(bottom)
+      const verified = validForNozzle(cumVolumeFromSection(data.text), 3)
+      if (verified) readings[3] = verified
+      texts.push(`Bottom T4 section: ${data.text}`); stage += 1
     }
 
     // Low-camera-quality pass: adaptive local threshold handles shadows and faded thermal text.
