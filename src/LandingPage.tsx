@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import FuelStage from './FuelStage'
 import QrCode from './QrCode'
-import BrandLogo from './BrandLogo'
 import { APP_VERSION, ARM64_URL, ARMV7_URL, PWA_URL, REPO_URL, RELEASE_URL } from './qrCodes'
 
 type Props = {
@@ -9,87 +7,118 @@ type Props = {
   onDismiss: () => void
 }
 
-const FEATURES = [
+const STATION = `${import.meta.env.BASE_URL}landing/station-neutral.webp`
+const NOZZLE = `${import.meta.env.BASE_URL}landing/nozzle-neutral.webp`
+
+/** Documented fixture pair — the same numbers the regression suite asserts. */
+const LEDGER = [
+  { tank: 'T1', open: '1248765.432', close: '1249178.182', diff: '412.750' },
+  { tank: 'T2', open: '2506340.875', close: '2507529.500', diff: '1188.625' },
+  { tank: 'T3', open: '987654.321', close: '987890.801', diff: '236.480' },
+  { tank: 'T4', open: '4752880.640', close: '4753776.000', diff: '895.360' }
+]
+
+const CHAPTERS = [
   {
-    icon: '📷',
-    tone: 'a',
-    title: 'On-device totalizer OCR',
-    body: 'Google ML Kit reads T1–T4 straight off the shift slip with bounding boxes. No cloud key, no per-scan billing, no image ever leaves the phone.'
+    n: '01',
+    title: 'The slip comes off the printer',
+    body: 'Thermal paper, four nozzle totalizers, numbers running to three decimals. Typing them by hand at the end of a twelve-hour shift is exactly where the money leaks.'
   },
   {
-    icon: '🛡️',
-    tone: 'b',
-    title: 'ShDayVol safety gate',
-    body: "Closing − Opening is checked against the slip's own printed day volume. A misread digit blocks Auto Fill, Save and Print instead of quietly costing you money."
+    n: '02',
+    title: 'Point the camera once',
+    body: 'Google ML Kit reads T1–T4 directly on the phone, with bounding boxes so the right number lands in the right row. No upload, no cloud key, no per-scan bill.'
   },
   {
-    icon: '🌅',
-    tone: 'c',
-    title: 'Explicit Morning / Evening',
-    body: 'You confirm which shift each scan belongs to. One slip can never silently fill both columns, and the clock is never used to guess.'
+    n: '03',
+    title: 'The app checks its own work',
+    body: 'Closing minus Opening must equal the day volume printed on that same slip. If it does not, Auto Fill, Save and Print are blocked — a safety hold, never a guess.'
   },
   {
-    icon: '💳',
-    tone: 'd',
-    title: 'Payment reconciliation',
-    body: 'Cash, PhonePe, Paytm, bank, fleet card, udhari and kharche — matched against the day’s fuel sale until the ledger balances.'
-  },
-  {
-    icon: '📊',
-    tone: 'e',
-    title: 'History, Excel & print',
-    body: 'Searchable local history, real multi-sheet .xlsx export, WhatsApp share and a one-page A4 landscape day report.'
-  },
-  {
-    icon: '🔒',
-    tone: 'f',
-    title: 'Encrypted backup',
-    body: 'Password-protected AES-GCM .pumpbook files. No account, no analytics, no sign-up — the data stays yours.'
+    n: '04',
+    title: 'The day closes clean',
+    body: 'Rates, testing, and every payment mode — cash, PhonePe, Paytm, bank, fleet card, udhari, kharche — reconciled until the ledger balances. Then save, share or print.'
   }
 ]
 
-const STEPS = [
-  { n: '01', title: 'Scan Morning slip', body: 'Point the camera at the opening shift totalizer. ML Kit lifts all four nozzle readings.' },
-  { n: '02', title: 'Scan Evening slip', body: 'Same for the closing shift. You explicitly confirm which column each scan belongs to.' },
-  { n: '03', title: 'Verified automatically', body: 'Every nozzle difference is matched against the printed ShDayVol before a rupee is calculated.' },
-  { n: '04', title: 'Close the day', body: 'Enter rates and payments, then save, share on WhatsApp, export Excel or print the report.' }
+const FEATURES = [
+  { k: 'On-device OCR', v: 'ML Kit reads the totalizer with bounding boxes. Nothing leaves the phone.' },
+  { k: 'ShDayVol gate', v: 'Every nozzle difference is proved against the slip’s own printed day volume.' },
+  { k: 'Explicit shifts', v: 'You confirm Morning or Evening. One slip can never fill both columns.' },
+  { k: 'Reconciliation', v: 'Eight payment modes matched against the day’s fuel sale until it balances.' },
+  { k: 'History & export', v: 'Searchable local history, real .xlsx export, WhatsApp share, A4 print.' },
+  { k: 'Encrypted backup', v: 'Password-protected AES-GCM files. No account, no analytics, ever.' }
 ]
 
+/** Counts a number up once its section scrolls into view. */
+function useCountUp(target: number, run: boolean, duration = 1600, reduced = false) {
+  const [value, setValue] = useState(reduced ? target : 0)
+  useEffect(() => {
+    if (reduced) { setValue(target); return }
+    if (!run) return
+    let frame = 0
+    const start = performance.now()
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / duration)
+      setValue(target * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [target, run, duration, reduced])
+  return value
+}
+
 export default function LandingPage({ onEnter, onDismiss }: Props) {
-  const [copied, setCopied] = useState(false)
   const [reduced, setReduced] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [ledgerIn, setLedgerIn] = useState(false)
   const revealRefs = useRef<(HTMLElement | null)[]>([])
+  const ledgerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    setReduced(query.matches)
-    const onChange = (event: MediaQueryListEvent) => setReduced(event.matches)
-    query.addEventListener('change', onChange)
-    return () => query.removeEventListener('change', onChange)
+    const q = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setReduced(q.matches)
+    const on = (e: MediaQueryListEvent) => setReduced(e.matches)
+    q.addEventListener('change', on)
+    return () => q.removeEventListener('change', on)
   }, [])
 
+  // Scroll reveal for every element tagged with the ref collector.
   useEffect(() => {
     const nodes = revealRefs.current.filter(Boolean) as HTMLElement[]
     if (reduced || !('IntersectionObserver' in window)) {
-      nodes.forEach(node => node.classList.add('is-in'))
+      nodes.forEach(n => n.classList.add('is-in'))
+      setLedgerIn(true)
       return
     }
-    const observer = new IntersectionObserver(
-      entries => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('is-in')
-            observer.unobserve(entry.target)
-          }
-        })
-      },
-      { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
-    )
-    nodes.forEach(node => observer.observe(node))
-    return () => observer.disconnect()
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return
+        e.target.classList.add('is-in')
+        io.unobserve(e.target)
+      })
+    }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' })
+    nodes.forEach(n => io.observe(n))
+    return () => io.disconnect()
   }, [reduced])
 
-  const track = (index: number) => (node: HTMLElement | null) => { revealRefs.current[index] = node }
+  // Ledger animates its own numbers when it arrives.
+  useEffect(() => {
+    const el = ledgerRef.current
+    if (!el) return
+    if (reduced || !('IntersectionObserver' in window)) { setLedgerIn(true); return }
+    const io = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) { setLedgerIn(true); io.disconnect() }
+    }, { threshold: 0.35 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [reduced])
+
+  const total = useCountUp(265248.52, ledgerIn, 1900, reduced)
+  const litres = useCountUp(2733.215, ledgerIn, 1900, reduced)
+
+  const track = (i: number) => (n: HTMLElement | null) => { revealRefs.current[i] = n }
 
   const shareText = 'Pump Book — petrol pump daily closing. Scan the shift slip, it reads the totalizer and does the maths. Free and offline.'
 
@@ -98,237 +127,259 @@ export default function LandingPage({ onEnter, onDismiss }: Props) {
       await navigator.clipboard.writeText(PWA_URL)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1800)
-    } catch {
-      setCopied(false)
-    }
+    } catch { setCopied(false) }
   }
 
   const nativeShare = async () => {
     if (navigator.share) {
       await navigator.share({ title: 'Pump Book', text: shareText, url: PWA_URL }).catch(() => undefined)
-    } else {
-      void copyLink()
-    }
+    } else { void copyLink() }
   }
 
+  const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const qty = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+
   return (
-    <div className="landing">
-      {/* ------------------------------------------------ hero */}
-      <header className="landing-hero">
-        <div className="landing-aurora" aria-hidden="true">
-          <span className="aurora-blob blob-1" />
-          <span className="aurora-blob blob-2" />
-          <span className="aurora-blob blob-3" />
-          <span className="aurora-grid" />
-        </div>
+    <div className={`ed${reduced ? ' is-still' : ''}`}>
 
-        <nav className="landing-nav">
-          <span className="landing-brand">
-            <BrandLogo compact animated={false} />
-            <span><b>Pump Book</b><small>SMART DAILY CLOSING</small></span>
-          </span>
-          <div className="landing-nav-links">
-            <a href="#landing-get">Download</a>
-            <a href="#landing-features">Features</a>
-            <a href="#landing-flow">How it works</a>
-            <button type="button" className="landing-skip" onClick={onDismiss}>Open app →</button>
-          </div>
+      {/* ============================================ masthead */}
+      <header className="ed-masthead">
+        <span className="ed-logo">Pump&nbsp;Book</span>
+        <nav className="ed-nav">
+          <a href="#ed-story">The problem</a>
+          <a href="#ed-proof">Proof</a>
+          <a href="#ed-get">Get it</a>
         </nav>
-
-        <div className="landing-hero-grid">
-          <div className="landing-hero-copy">
-            <span className="landing-pill"><i />Version {APP_VERSION} · Free · No account</span>
-            <h1>Fuel counted.<br /><em>Every rupee matched.</em></h1>
-            <p className="landing-hindi">हर लीटर दर्ज। हर रुपया Match.</p>
-            <p className="landing-sub">
-              Scan the IndianOil shift totalizer slip. Pump Book reads T1–T4 on device, pairs Morning with
-              Evening, verifies every nozzle against the printed ShDayVol and closes the day with payments
-              reconciled — completely offline.
-            </p>
-            <div className="landing-cta">
-              <a className="landing-btn primary" href="#landing-get">
-                <span>⬇</span> Get the app
-              </a>
-              <button type="button" className="landing-btn ghost" onClick={onEnter}>
-                <span>▶</span> Start a closing
-              </button>
-            </div>
-            <dl className="landing-stats">
-              <div><dt>&lt;2s</dt><dd>Scan to result</dd></div>
-              <div><dt>100%</dt><dd>On-device OCR</dd></div>
-              <div><dt>0</dt><dd>Cloud uploads</dd></div>
-              <div><dt>13 MB</dt><dd>APK size</dd></div>
-            </dl>
-          </div>
-
-          <FuelStage />
-        </div>
-
-        <div className="landing-marquee" aria-hidden="true">
-          <div className="landing-marquee-track">
-            {Array.from({ length: 2 }).map((_, copy) => (
-              <span key={copy}>
-                OFFLINE FIRST <i>◆</i> ML KIT OCR <i>◆</i> ShDayVol VERIFIED <i>◆</i> AES-GCM BACKUP
-                <i>◆</i> EXCEL EXPORT <i>◆</i> NO ACCOUNT <i>◆</i> BUILT BY ANSH <i>◆</i>&nbsp;
-              </span>
-            ))}
-          </div>
-        </div>
+        <button type="button" className="ed-skip" onClick={onDismiss}>Open app →</button>
       </header>
 
-      {/* ------------------------------------------------ download + QR */}
-      <section className="landing-section landing-get" id="landing-get">
-        <div className="landing-head" ref={track(0)}>
-          <p className="landing-eyebrow">Scan · tap · done</p>
-          <h2>Get Pump Book in seconds</h2>
-          <p className="landing-lede">
-            Point a phone camera at a code, or tap the button under it. Not sure which APK?
-            Almost every phone made after 2017 is <b>ARM64</b>.
+      {/* ============================================ split hero */}
+      <section className="ed-hero">
+        <figure className="ed-hero-pic">
+          <span className="ed-pic-img" style={{ backgroundImage: `url(${STATION})` }} />
+          <span className="ed-pic-veil" />
+          <figcaption>
+            <b>Gorakhpur</b>
+            <span>Closing time, 20:40</span>
+          </figcaption>
+        </figure>
+
+        <div className="ed-hero-copy">
+          <span className="ed-rule" />
+          <p className="ed-eyebrow">Pump Book · Edition {APP_VERSION}</p>
+          <h1>
+            <span className="ed-line"><span>Fuel counted.</span></span>
+            <span className="ed-line"><em>Every rupee matched.</em></span>
+          </h1>
+          <p className="ed-hindi">हर लीटर दर्ज। हर रुपया Match.</p>
+          <p className="ed-dek">
+            A petrol-pump closing app built for the forecourt, not the office. It reads the thermal
+            shift slip on device, pairs Morning with Evening, and <strong>refuses to show a total it
+            cannot prove</strong> against the printed ShDayVol.
           </p>
+
+          <dl className="ed-stats">
+            <div><dt>&lt;2s</dt><dd>Scan to result</dd></div>
+            <div><dt>100%</dt><dd>On device</dd></div>
+            <div><dt>0</dt><dd>Cloud uploads</dd></div>
+          </dl>
+
+          <div className="ed-actions">
+            <a className="ed-btn ed-btn-solid" href={ARM64_URL}>Download APK</a>
+            <button type="button" className="ed-btn ed-btn-line" onClick={onEnter}>Start a closing</button>
+          </div>
         </div>
-
-        <div className="landing-qr-grid" ref={track(1)}>
-          <article className="landing-qr-card tone-a">
-            <p className="landing-qr-tag">Recommended</p>
-            <h3>Android ARM64</h3>
-            <p className="landing-qr-body">Bundled ML Kit OCR. Fastest scanning, fully offline.</p>
-            <QrCode target="arm64" size={168} label="Scan to download" />
-            <a className="landing-qr-btn" href={ARM64_URL}>Download · 17.4 MB</a>
-            <p className="landing-qr-meta">arm64-v8a · v{APP_VERSION}</p>
-          </article>
-
-          <article className="landing-qr-card tone-b">
-            <p className="landing-qr-tag">Older phones</p>
-            <h3>Android ARMv7</h3>
-            <p className="landing-qr-body">For 32-bit devices. Same features, smaller build.</p>
-            <QrCode target="armv7" size={168} label="Scan to download" />
-            <a className="landing-qr-btn" href={ARMV7_URL}>Download · 13.1 MB</a>
-            <p className="landing-qr-meta">armeabi-v7a · v{APP_VERSION}</p>
-          </article>
-
-          <article className="landing-qr-card tone-c">
-            <p className="landing-qr-tag">No install</p>
-            <h3>Web app</h3>
-            <p className="landing-qr-body">Runs in any browser. Add to Home Screen for offline use.</p>
-            <QrCode target="pwa" size={168} label="Scan to open" />
-            <a className="landing-qr-btn" href={PWA_URL}>Open web app</a>
-            <p className="landing-qr-meta">Tesseract OCR fallback</p>
-          </article>
-        </div>
-
-        <p className="landing-note" ref={track(2)}>
-          <b>Installing an APK?</b> Android will ask you to allow installs from your browser — that is normal
-          outside the Play Store. <b>Upgrading from 4.1.3?</b> Back up first, uninstall 4.1.3, install {APP_VERSION},
-          then restore; the old test key could not be retained. From {APP_VERSION} onward, updates install
-          normally from <b>Settings → App updates</b>.
-        </p>
       </section>
 
-      {/* ------------------------------------------------ features */}
-      <section className="landing-section landing-features" id="landing-features">
-        <div className="landing-head" ref={track(3)}>
-          <p className="landing-eyebrow">Built for the pump, not the office</p>
-          <h2>Everything in one closing</h2>
-          <p className="landing-lede">Every feature below ships in {APP_VERSION} today.</p>
-        </div>
-        <div className="landing-feature-grid">
-          {FEATURES.map((feature, index) => (
-            <article className={`landing-feature tone-${feature.tone}`} key={feature.title} ref={track(4 + index)}>
-              <i>{feature.icon}</i>
-              <h3>{feature.title}</h3>
-              <p>{feature.body}</p>
-            </article>
+      {/* ============================================ ticker */}
+      <div className="ed-ticker" aria-hidden="true">
+        <div className="ed-ticker-track">
+          {[0, 1].map(i => (
+            <span key={i}>
+              Offline first <i>·</i> ML Kit OCR <i>·</i> ShDayVol verified <i>·</i> AES-GCM backup
+              <i>·</i> Excel export <i>·</i> No account <i>·</i> Built by Ansh <i>·</i>&nbsp;
+            </span>
           ))}
         </div>
-      </section>
+      </div>
 
-      {/* ------------------------------------------------ flow */}
-      <section className="landing-section landing-flow" id="landing-flow">
-        <div className="landing-head" ref={track(11)}>
-          <p className="landing-eyebrow">Four steps, twice a day</p>
-          <h2>How a closing works</h2>
+      {/* ============================================ story */}
+      <section className="ed-story" id="ed-story">
+        <div className="ed-story-head" ref={track(0)}>
+          <span className="ed-rule dark" />
+          <h2>Every evening,<br /><em>the same question.</em></h2>
+          <p>Did the numbers actually add up — or did a misread digit just walk out of the till?</p>
         </div>
-        <ol className="landing-steps">
-          {STEPS.map((step, index) => (
-            <li key={step.n} ref={track(12 + index)}>
-              <span className="landing-step-n">{step.n}</span>
+
+        <ol className="ed-chapters">
+          {CHAPTERS.map((c, i) => (
+            <li key={c.n} ref={track(1 + i)}>
+              <span className="ed-chapter-n">{c.n}</span>
               <div>
-                <h3>{step.title}</h3>
-                <p>{step.body}</p>
+                <h3>{c.title}</h3>
+                <p>{c.body}</p>
               </div>
             </li>
           ))}
         </ol>
       </section>
 
-      {/* ------------------------------------------------ share */}
-      <section className="landing-section landing-share">
-        <div className="landing-head" ref={track(16)}>
-          <p className="landing-eyebrow">Know another pump owner?</p>
-          <h2>Share Pump Book</h2>
-          <p className="landing-lede">Send the link, or let them scan the code right off your screen.</p>
-        </div>
+      {/* ============================================ proof / ledger */}
+      <section className="ed-proof" id="ed-proof">
+        <figure className="ed-proof-pic" ref={track(5)}>
+          <span className="ed-pic-img" style={{ backgroundImage: `url(${NOZZLE})` }} />
+          <span className="ed-pic-veil soft" />
+        </figure>
 
-        <div className="landing-share-grid" ref={track(17)}>
-          <div className="landing-share-card">
-            <h3>Send a link</h3>
-            <p>Opens the web app instantly — nothing to install.</p>
-            <div className="landing-copy-row">
-              <input value={PWA_URL} readOnly aria-label="Pump Book link" onFocus={event => event.currentTarget.select()} />
-              <button type="button" onClick={() => void copyLink()}>{copied ? 'Copied!' : 'Copy'}</button>
-            </div>
-            <div className="landing-chips">
-              <a
-                className="landing-chip wa"
-                target="_blank"
-                rel="noopener noreferrer"
-                href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${PWA_URL}`)}`}
-              >WhatsApp</a>
-              <a
-                className="landing-chip tg"
-                target="_blank"
-                rel="noopener noreferrer"
-                href={`https://t.me/share/url?url=${encodeURIComponent(PWA_URL)}&text=${encodeURIComponent(shareText)}`}
-              >Telegram</a>
-              <button type="button" className="landing-chip sys" onClick={() => void nativeShare()}>More…</button>
-            </div>
-          </div>
+        <div className="ed-proof-copy" ref={ledgerRef}>
+          <span className="ed-rule" />
+          <p className="ed-eyebrow light">A verified pair</p>
+          <h2>The maths, shown<br />in full.</h2>
+          <p className="ed-proof-lede">
+            These are the documented validation figures from the test suite — the same four nozzles,
+            checked against the printed day volume before a rupee is calculated.
+          </p>
 
-          <div className="landing-share-card center">
-            <h3>Let them scan</h3>
-            <p>Hold up your phone, project it, or print it.</p>
-            <QrCode target="pwa" size={180} />
-            <p className="landing-qr-meta">anshyd1.github.io/Pump-book</p>
+          <div className={`ed-ledger${ledgerIn ? ' is-in' : ''}`}>
+            <div className="ed-ledger-head">
+              <span>Tank</span><span>Opening</span><span>Closing</span><span>Sale</span>
+            </div>
+            {LEDGER.map((r, i) => (
+              <div className="ed-ledger-row" key={r.tank} style={{ transitionDelay: `${i * 90}ms` }}>
+                <span className="ed-tank">{r.tank}</span>
+                <span className="ed-mono dim">{r.open}</span>
+                <span className="ed-mono dim">{r.close}</span>
+                <span className="ed-mono ok">{r.diff}</span>
+              </div>
+            ))}
+            <div className="ed-ledger-total">
+              <div>
+                <span>Verified volume</span>
+                <b className="ed-mono">{qty.format(litres)} L</b>
+              </div>
+              <div className="right">
+                <span>Final sale</span>
+                <b className="ed-mono gold">₹{inr.format(total)}</b>
+              </div>
+            </div>
+            <p className="ed-ledger-foot">
+              <i /> Mode 2 · HSD ₹95.50 · MS ₹102.01 · testing 0 — all four nozzles match ShDayVol
+            </p>
           </div>
         </div>
       </section>
 
-      {/* ------------------------------------------------ trust */}
-      <section className="landing-section landing-trust">
-        <div className="landing-head" ref={track(18)}>
-          <p className="landing-eyebrow">Trust, but verify</p>
-          <h2>Open source &amp; checksummed</h2>
-          <p className="landing-lede">Read every line, or verify your download with <code>sha256sum</code>.</p>
+      {/* ============================================ features */}
+      <section className="ed-features">
+        <div className="ed-feat-head" ref={track(6)}>
+          <span className="ed-rule dark" />
+          <h2>What ships in {APP_VERSION}</h2>
         </div>
-        <div className="landing-sums" ref={track(19)}>
-          <div><b>ARM64 APK</b><code>b196babf56d576abb32213dd21ed84af05d747c75931c4ea7b44cceec55c0703</code></div>
-          <div><b>ARMv7 APK</b><code>339fad97740eaf3143040caffdc2a4f4d8ca17d50c534bb1b2292b801ca3968e</code></div>
-          <div><b>Source zip</b><code>97f15dd4a412840073ab9cd15374ad6785adfcbdfe4f27d68c0fbd87822efc5e</code></div>
-        </div>
-        <div className="landing-trust-cta">
-          <a className="landing-btn primary" href={REPO_URL} target="_blank" rel="noopener noreferrer">★ View source</a>
-          <a className="landing-btn ghost dark" href={RELEASE_URL} target="_blank" rel="noopener noreferrer">Release notes</a>
+        <div className="ed-feat-grid">
+          {FEATURES.map((f, i) => (
+            <article key={f.k} ref={track(7 + i)}>
+              <span className="ed-feat-n">{String(i + 1).padStart(2, '0')}</span>
+              <h3>{f.k}</h3>
+              <p>{f.v}</p>
+            </article>
+          ))}
         </div>
       </section>
 
-      <footer className="landing-foot">
-        <span className="landing-brand">
-          <BrandLogo compact animated={false} />
-          <span><b>Pump Book</b><small>FUEL COUNTED. EVERY RUPEE MATCHED.</small></span>
-        </span>
-        <p>Runs offline · No account · No analytics · Android 6.0+ (minSdk 23)</p>
-        <p className="landing-by">Designed &amp; built by Ansh</p>
-        <button type="button" className="landing-btn primary" onClick={onEnter}>Open Pump Book →</button>
+      {/* ============================================ get it */}
+      <section className="ed-get" id="ed-get">
+        <div className="ed-get-head" ref={track(13)}>
+          <span className="ed-rule" />
+          <h2>Get Pump Book</h2>
+          <p>Point a camera at a code, or tap the link beneath it. Most phones made after 2017 are ARM64.</p>
+        </div>
+
+        <div className="ed-get-grid">
+          <article ref={track(14)}>
+            <p className="ed-get-tag">Recommended</p>
+            <h3>Android ARM64</h3>
+            <QrCode target="arm64" size={158} tone="#111110" />
+            <a href={ARM64_URL}>Download · 17.4 MB</a>
+            <span className="ed-mono tiny">arm64-v8a</span>
+          </article>
+          <article ref={track(15)}>
+            <p className="ed-get-tag">Older phones</p>
+            <h3>Android ARMv7</h3>
+            <QrCode target="armv7" size={158} tone="#111110" />
+            <a href={ARMV7_URL}>Download · 13.1 MB</a>
+            <span className="ed-mono tiny">armeabi-v7a</span>
+          </article>
+          <article ref={track(16)}>
+            <p className="ed-get-tag">No install</p>
+            <h3>Web app</h3>
+            <QrCode target="pwa" size={158} tone="#111110" />
+            <a href={PWA_URL}>Open web app</a>
+            <span className="ed-mono tiny">Add to Home Screen</span>
+          </article>
+        </div>
+
+        <p className="ed-note" ref={track(17)}>
+          <b>Installing an APK?</b> Android asks you to allow installs from your browser — normal outside
+          the Play Store. <b>Upgrading from 4.1.3?</b> Back up, uninstall, install {APP_VERSION}, restore.
+          From {APP_VERSION} onward, updates arrive in <b>Settings → App updates</b>.
+        </p>
+      </section>
+
+      {/* ============================================ share */}
+      <section className="ed-share">
+        <div className="ed-share-inner" ref={track(18)}>
+          <div>
+            <span className="ed-rule" />
+            <h2>Know another<br />pump owner?</h2>
+            <p>Send the link, or let them scan it straight off your screen.</p>
+            <div className="ed-copy-row">
+              <input value={PWA_URL} readOnly aria-label="Pump Book link"
+                onFocus={e => e.currentTarget.select()} />
+              <button type="button" onClick={() => void copyLink()}>{copied ? 'Copied' : 'Copy'}</button>
+            </div>
+            <div className="ed-chips">
+              <a className="ed-chip wa" target="_blank" rel="noopener noreferrer"
+                href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${PWA_URL}`)}`}>WhatsApp</a>
+              <a className="ed-chip tg" target="_blank" rel="noopener noreferrer"
+                href={`https://t.me/share/url?url=${encodeURIComponent(PWA_URL)}&text=${encodeURIComponent(shareText)}`}>Telegram</a>
+              <button type="button" className="ed-chip sys" onClick={() => void nativeShare()}>More…</button>
+            </div>
+          </div>
+          <div className="ed-share-qr">
+            <QrCode target="pwa" size={190} tone="#111110" />
+            <span className="ed-mono tiny">anshyd1.github.io/Pump-book</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================ colophon */}
+      <footer className="ed-foot">
+        <div className="ed-foot-grid">
+          <div>
+            <span className="ed-logo light">Pump&nbsp;Book</span>
+            <p>Fuel counted. Every rupee matched.</p>
+          </div>
+          <div>
+            <b>Verify</b>
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer">Source on GitHub</a>
+            <a href={RELEASE_URL} target="_blank" rel="noopener noreferrer">Release {APP_VERSION}</a>
+          </div>
+          <div>
+            <b>Checksums</b>
+            <span className="ed-mono tiny">b196babf…c55c0703 arm64</span>
+            <span className="ed-mono tiny">339fad97…01ca3968e armv7</span>
+          </div>
+          <div>
+            <b>Runs</b>
+            <span>Offline · no account</span>
+            <span>Android 6.0+ · any browser</span>
+          </div>
+        </div>
+        <div className="ed-foot-rule" />
+        <div className="ed-colophon">
+          <span>Designed &amp; built by Ansh</span>
+          <button type="button" className="ed-btn ed-btn-solid small" onClick={onEnter}>Open Pump Book →</button>
+        </div>
       </footer>
     </div>
   )
