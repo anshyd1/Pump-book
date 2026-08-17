@@ -16,7 +16,7 @@ import { createXlsx, decryptBackup, downloadBlob, encryptedBackup } from './data
 import type { PaymentKind } from './PaymentIcon'
 import type { ReadingSlot } from './receiptOcr'
 import { applySlipToPair, dayVolumeMismatches, extremeDifferenceOutliers } from './scanPairing'
-import { defaultPreferences, loadPreferences } from './preferences'
+import { applyWallpaperUrls, defaultPreferences, loadPreferences } from './preferences'
 import type { AppPreferences } from './preferences'
 import { checkForAppUpdate, installAppUpdate, openUpdateRelease } from './appUpdater'
 import type { UpdateInfo } from './appUpdater'
@@ -87,6 +87,11 @@ const pageFromHash = (): AppPage => {
 /** The welcome/landing experience lives outside the four ledger pages. */
 const WELCOME_SEEN_KEY = 'pump-book-welcome-v1'
 const isWelcomeHash = () => window.location.hash.replace('#/', '') === 'welcome'
+/** A deep link straight to a ledger page must win over the first-run welcome. */
+const isExplicitPageHash = () => {
+  const value = window.location.hash.replace('#/', '')
+  return value === 'closing' || value === 'history' || value === 'settings'
+}
 
 function Field({ label, value, onChange, step = '0.01', placeholder, type = 'number' }: { label: string; value: string; onChange: (value: string) => void; step?: string; placeholder?: string; type?: 'number' | 'date' | 'text' }) {
   return <label className="field-label"><span>{label}</span><input inputMode={type === 'number' ? 'decimal' : undefined} type={type} step={type === 'number' ? step : undefined} value={value} placeholder={placeholder} onFocus={type === 'number' ? event => event.currentTarget.select() : undefined} onChange={event => onChange(event.target.value)}/></label>
@@ -112,6 +117,8 @@ export default function App() {
   // Show the landing page on first run, or whenever #/welcome is opened/shared.
   const [showWelcome, setShowWelcome] = useState(() => {
     if (isWelcomeHash()) return true
+    // Never hijack a shared/bookmarked deep link such as #/settings.
+    if (isExplicitPageHash()) return false
     try { return localStorage.getItem(WELCOME_SEEN_KEY) !== 'yes' } catch { return false }
   })
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -186,6 +193,8 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('pump-book-preferences-v1', JSON.stringify(preferences))
     const root = document.documentElement
+    // Wallpaper URLs depend on the deployment base, so resolve them in JS.
+    applyWallpaperUrls()
     root.dataset.theme = preferences.theme
     root.dataset.wallpaper = preferences.wallpaper
     root.dataset.density = preferences.density
@@ -202,6 +211,7 @@ export default function App() {
     const onHash = () => {
       setPage(pageFromHash())
       if (isWelcomeHash()) setShowWelcome(true)
+      else if (isExplicitPageHash()) setShowWelcome(false)
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)

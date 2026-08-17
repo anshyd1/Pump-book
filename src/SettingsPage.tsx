@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import BrandLogo from './BrandLogo'
+import QrCode from './QrCode'
+import { PWA_URL } from './qrCodes'
 import AppUpdateCard from './AppUpdateCard'
 import type { UpdateInfo } from './appUpdater'
 import type { AppPreferences, ThemeChoice, WallpaperChoice } from './preferences'
@@ -26,6 +29,8 @@ const themes: { id: ThemeChoice; label: string; hint: string }[] = [
   { id: 'dark', label: 'Dark', hint: 'Low glare' },
   { id: 'amoled', label: 'AMOLED', hint: 'Pure black' }
 ]
+const SHARE_TEXT = 'Pump Book — petrol pump daily closing. Scan the shift slip, it reads the totalizer and does the maths. Free and offline.'
+
 const wallpapers: { id: WallpaperChoice; label: string; hint: string }[] = [
   { id: 'fuel-aurora', label: 'Fuel Aurora', hint: 'Teal liquid glass' },
   { id: 'midnight-octane', label: 'Midnight Octane', hint: 'Navy neon fuel' },
@@ -35,6 +40,7 @@ const wallpapers: { id: WallpaperChoice; label: string; hint: string }[] = [
 ]
 
 export default function SettingsPage({ preferences, onChange, onClearDraft, onClearHistory, historyCount, version, updateInfo, updateBusy, updateMessage, updateError, onCheckUpdate, onInstallUpdate, onOpenRelease, onOpenWelcome }: Props) {
+  const [copied, setCopied] = useState(false)
   const patch = (next: Partial<AppPreferences>) => onChange({ ...preferences, ...next })
   return <div className="page-stack settings-page">
     <section className="page-hero compact-hero">
@@ -82,15 +88,40 @@ export default function SettingsPage({ preferences, onChange, onClearDraft, onCl
     </section>
 
     <section className="card settings-section">
-      <div className="section-head"><div><p className="eyebrow">Spread the word</p><h2>Welcome &amp; share</h2><p className="section-sub">QR codes, download links और app tour</p></div></div>
-      <div className="danger-actions share-actions">
-        <button onClick={onOpenWelcome}><b>Open welcome page</b><small>Feature tour, QR codes और APK links</small></button>
-        <button onClick={() => {
-          const url = 'https://anshyd1.github.io/Pump-book/'
-          const text = 'Pump Book — petrol pump daily closing. Scan the shift slip, it reads the totalizer and does the maths. Free and offline.'
-          if (navigator.share) { void navigator.share({ title: 'Pump Book', text, url }).catch(() => undefined) }
-          else { void navigator.clipboard.writeText(`${text} ${url}`).catch(() => undefined) }
-        }}><b>Share Pump Book</b><small>WhatsApp, Telegram या link copy</small></button>
+      <div className="section-head"><div><p className="eyebrow">Spread the word</p><h2>Share Pump Book</h2><p className="section-sub">सामने वाले को बस ये code scan करने दें—कुछ भी install नहीं</p></div><span className="soft-badge">Works offline</span></div>
+
+      <div className="share-qr-row">
+        <div className="share-qr-card">
+          <QrCode target="pwa" size={150} label="Web app — कुछ install नहीं"/>
+        </div>
+        <div className="share-qr-card">
+          <QrCode target="arm64" size={150} label="Android APK — ARM64"/>
+        </div>
+      </div>
+
+      <div className="share-link-row">
+        <input readOnly value={PWA_URL} aria-label="Pump Book link" onFocus={event => event.currentTarget.select()}/>
+        <button type="button" className={copied ? 'is-copied' : ''} onClick={() => {
+          navigator.clipboard.writeText(PWA_URL).then(() => {
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 1800)
+          }).catch(() => undefined)
+        }}>{copied ? '✓ Copied' : 'Copy'}</button>
+      </div>
+
+      <div className="share-chip-row">
+        <a className="share-chip wa" target="_blank" rel="noopener noreferrer"
+          href={`https://wa.me/?text=${encodeURIComponent(`${SHARE_TEXT} ${PWA_URL}`)}`}>WhatsApp</a>
+        <a className="share-chip tg" target="_blank" rel="noopener noreferrer"
+          href={`https://t.me/share/url?url=${encodeURIComponent(PWA_URL)}&text=${encodeURIComponent(SHARE_TEXT)}`}>Telegram</a>
+        <button type="button" className="share-chip sys" onClick={() => {
+          if (navigator.share) {
+            void navigator.share({ title: 'Pump Book', text: SHARE_TEXT, url: PWA_URL }).catch(() => undefined)
+          } else {
+            void navigator.clipboard.writeText(`${SHARE_TEXT} ${PWA_URL}`).catch(() => undefined)
+          }
+        }}>More…</button>
+        <button type="button" className="share-chip tour" onClick={onOpenWelcome}>Welcome page ↗</button>
       </div>
     </section>
 

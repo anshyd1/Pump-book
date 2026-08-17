@@ -1,4 +1,4 @@
-const CACHE = 'pump-book-v25';
+const CACHE = 'pump-book-v26';
 const CORE = [
   './', './manifest.webmanifest', './icon-192.png', './icon-512.png', './pump-book-logo.svg',
   './wallpapers/fuel-aurora.webp', './wallpapers/midnight-octane.webp',

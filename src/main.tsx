@@ -3,6 +3,11 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles.css'
 import './landing.css'
+import { applyWallpaperUrls } from './preferences'
+
+// Resolve wallpaper URLs before first paint so the picker and the background
+// layer never render against an unset variable.
+applyWallpaperUrls()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode><App /></React.StrictMode>
