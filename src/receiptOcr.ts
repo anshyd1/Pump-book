@@ -1,7 +1,7 @@
 import { createWorker, PSM } from 'tesseract.js'
 
 export type ReadingSlot = 'morning' | 'evening'
-export type ScanResult = { readings: string[]; confidence: number; rawText: string; slipTime: string; suggestedSlot: ReadingSlot | null }
+export type ScanResult = { readings: string[]; dayVolumes: string[]; confidence: number; rawText: string; slipTime: string; suggestedSlot: ReadingSlot | null }
 
 type LoadedImage = { width: number; height: number; image: HTMLImageElement }
 type OcrWorker = Awaited<ReturnType<typeof createWorker>>
@@ -243,6 +243,31 @@ export function parseDocumentText(raw: string): string[] {
   return result
 }
 
+const dayVolumeFromSection = (section: string) => {
+  const lines = section.replace(/\r/g, '').split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    const normalized = lines[index].toLowerCase().replace(/[^a-z0-9.,]/g, '')
+    if (!/(?:day|bay|pay)v/.test(normalized)) continue
+    const sample = `${lines[index]} ${lines[index + 1] ?? ''}`.replace(/[Oo]/g, '0').replace(/,/g, '.')
+    const match = sample.match(/(\d+)\s*\.\s*(\d{3})/)
+    if (match) return `${match[1]}.${match[2]}`
+  }
+  return ''
+}
+const detectSlipSlot = (text: string): ReadingSlot | null => {
+  const match = text.match(/(?:time|t[il1]me)\s*[:\-]?\s*([0-2]?\d)\s*[:.]\s*([0-5]\d)/i)
+  if (!match) return null
+  const hour = Number(match[1]); return hour < 12 ? 'morning' : 'evening'
+}
+export function parseDayVolumes(raw: string): string[] {
+  const text = raw.replace(/\r/g, ''), markers = Array.from(text.matchAll(markerRegex)).map(match => ({ nozzle: markerNumber(match[1]), index: match.index! })).filter(item => item.nozzle >= 1 && item.nozzle <= 4)
+  const result = ['', '', '', '']
+  const firstTwo = markers.find(item => item.nozzle === 2)
+  if (firstTwo) result[0] = dayVolumeFromSection(text.slice(0, firstTwo.index))
+  markers.forEach((marker, index) => { result[marker.nozzle - 1] = dayVolumeFromSection(text.slice(marker.index, markers[index + 1]?.index ?? text.length)) })
+  return result
+}
+
 const LINE_TOP_RATIOS = [0.2734, 0.4785, 0.7080, 0.9717]
 
 export async function scanReceipt(file: File, onProgress: (progress: number, status: string) => void): Promise<ScanResult> {
@@ -257,7 +282,9 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
     else onProgress(.04, status)
   }
   const worker = await getOcrWorker()
-  const readings = ['', '', '', ''], texts: string[] = []
+  const readings = ['', '', '', ''], dayVolumes = ['', '', '', ''], texts: string[] = []
+  const filenameTime = file.name.match(/\d{8}(\d{2})\d{4}/)
+  let suggestedSlot: ReadingSlot | null = filenameTime ? (Number(filenameTime[1]) < 12 ? 'morning' : 'evening') : null
   const hasTime = () => performance.now() < deadline
 
   try {
@@ -265,7 +292,9 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN, tessedit_char_whitelist: '', preserve_interword_spaces: '1', user_defined_dpi: '300' })
     const full = await worker.recognize(normalized)
     texts.push(`Full receipt:\n${full.data.text}`); stage += 1
+    suggestedSlot = detectSlipSlot(full.data.text) ?? suggestedSlot
     parseDocumentText(full.data.text).forEach((value, index) => { const verified = validForNozzle(value, index); if (verified) readings[index] = verified })
+    parseDayVolumes(full.data.text).forEach((value, index) => { if (value) dayVolumes[index] = value })
 
     // OCR each missing nozzle block separately; this preserves tiny decimals and the torn T4 edge.
     if (readings.some(value => !value) && hasTime()) {
@@ -287,6 +316,7 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
           await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, tessedit_char_whitelist: '', preserve_interword_spaces: '1' })
         }
         if (verified) readings[index] = verified
+        const sectionDayVolume = dayVolumeFromSection(data.text); if (sectionDayVolume) dayVolumes[index] = sectionDayVolume
         texts.push(`Section T${index + 1}: ${data.text}`); stage += 1
       }
     }
@@ -392,6 +422,6 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
     }
 
     onProgress(1, 'recognizing text')
-    return { readings, confidence: readings.filter(Boolean).length * 25, rawText: texts.join('\n'), slipTime: '', suggestedSlot: null }
+    return { readings, dayVolumes, confidence: readings.filter(Boolean).length * 25, rawText: texts.join('\n'), slipTime: '', suggestedSlot }
   } finally { workerLogger = null; releaseOcrWorkerLater() }
 }

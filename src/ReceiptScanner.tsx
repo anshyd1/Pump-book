@@ -5,11 +5,13 @@ import BrandMascot from './BrandMascot'
 import SmartCamera from './SmartCamera'
 import type { ReadingSlot } from './receiptOcr'
 
+type ExistingReading = { morning: string; evening: string }
 type Props = {
-  onApply: (readings: string[], slot: ReadingSlot) => void
+  existingReadings: ExistingReading[]
+  onApply: (readings: string[], slot: ReadingSlot, dayVolumes: string[]) => void
 }
 
-export default function ReceiptScanner({ onApply }: Props) {
+export default function ReceiptScanner({ existingReadings, onApply }: Props) {
   const galleryRef = useRef<HTMLInputElement>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [open, setOpen] = useState(false)
@@ -18,6 +20,7 @@ export default function ReceiptScanner({ onApply }: Props) {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [readings, setReadings] = useState(['', '', '', ''])
+  const [dayVolumes, setDayVolumes] = useState(['', '', '', ''])
   const [confidence, setConfidence] = useState<number | null>(null)
   const [slot, setSlot] = useState<ReadingSlot>('evening')
   const [preview, setPreview] = useState('')
@@ -39,6 +42,7 @@ export default function ReceiptScanner({ onApply }: Props) {
     setBusy(true)
     setError('')
     setReadings(['', '', '', ''])
+    setDayVolumes(['', '', '', ''])
     setConfidence(null)
     setRawText('')
     setProgress(0)
@@ -49,12 +53,11 @@ export default function ReceiptScanner({ onApply }: Props) {
         setStatus(nextStatus === 'recognizing text' ? 'Fast OCR से 4 readings पढ़ रहे हैं…' : nextStatus === 'detecting receipt' ? 'Receipt auto-frame हो रही है…' : 'OCR engine तैयार हो रहा है…')
       })
       setReadings(result.readings)
+      setDayVolumes(result.dayVolumes)
       setConfidence(result.confidence)
       setRawText(result.rawText)
       if (result.suggestedSlot) setSlot(result.suggestedSlot)
-      const missing = result.readings.map((value, index) => value ? '' : `T${index + 1}`).filter(Boolean)
-      if (missing.length === 4) setError('कोई reading साफ नहीं मिली। पूरी slip frame में रखकर अच्छी रोशनी में दोबारा scan करें।')
-      else if (missing.length) setError(`${missing.join(', ')} verify नहीं हुई—गलत number भरने के बजाय blank छोड़ी गई है। Photo सीधी करके retry करें या manual भरें।`)
+      if (!result.readings.some(Boolean)) setError('कोई reading साफ नहीं मिली। पूरी slip frame में रखकर अच्छी रोशनी में दोबारा scan करें।')
     } catch (scanError) {
       console.error(scanError)
       setError('Scan नहीं हो पाया। Internet check करके या साफ फोटो से दोबारा कोशिश करें।')
@@ -75,9 +78,19 @@ export default function ReceiptScanner({ onApply }: Props) {
     setOpen(false)
   }
 
+  const effectiveReadings = readings.map((value, index) => {
+    if (value) return value
+    if (dayVolumes[index] === '') return ''
+    const day = Number(dayVolumes[index]), existing = existingReadings[index]
+    if (slot === 'evening' && existing?.morning) return (Number(existing.morning) + day).toFixed(3)
+    if (slot === 'morning' && existing?.evening) return (Number(existing.evening) - day).toFixed(3)
+    return ''
+  })
+  const missingLabels = effectiveReadings.map((value, index) => value ? '' : `T${index + 1}`).filter(Boolean)
+  const displayConfidence = effectiveReadings.filter(Boolean).length * 25
   const apply = () => {
-    if (!readings.some(Boolean)) return
-    onApply(readings, slot)
+    if (!effectiveReadings.some(Boolean)) return
+    onApply(effectiveReadings, slot, dayVolumes)
     setOpen(false)
   }
 
@@ -91,7 +104,7 @@ export default function ReceiptScanner({ onApply }: Props) {
     {open && <div className="scanner-backdrop" role="presentation" onClick={close}>
       <section className="scanner-modal" role="dialog" aria-modal="true" aria-labelledby="scanner-title" onClick={event => event.stopPropagation()}>
         <div className="scanner-head">
-          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · SMART OCR 3.3.1</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
+          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · SMART OCR 3.4.0</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
           <button type="button" className="scanner-close" disabled={busy} onClick={close}>✕</button>
         </div>
 
@@ -105,7 +118,7 @@ export default function ReceiptScanner({ onApply }: Props) {
               <div className="scan-stages"><span className={progress > 5 ? 'done' : 'active'}>Enhance</span><span className={progress > 30 ? 'done' : ''}>Deskew</span><span className={progress > 60 ? 'done' : ''}>Read</span><span className={progress >= 100 ? 'done' : ''}>Verify</span></div>
               <small>{progress}% · सामान्य scan 5–12 sec · पहली बार OCR engine download अलग से हो सकता है</small>
             </div> : <>
-              <div className="scan-result-head"><div><span className="result-kicker">SCAN COMPLETE</span><strong>CumVolume readings</strong></div>{confidence !== null && <span className={`confidence ${confidence === 100 ? 'perfect' : ''}`}><b>{confidence}%</b><small>confidence</small></span>}</div>
+              <div className="scan-result-head"><div><span className="result-kicker">SCAN COMPLETE</span><strong>CumVolume readings</strong></div>{confidence !== null && <span className={`confidence ${displayConfidence === 100 ? 'perfect' : ''}`}><b>{displayConfidence}%</b><small>{displayConfidence > confidence ? 'paired' : 'confidence'}</small></span>}</div>
               <div className="slot-picker">
                 <div><strong>किस समय की slip?</strong><span>सही जगह भरने के लिए सुबह या शाम चुनें</span></div>
                 <div className="slot-buttons">
@@ -114,10 +127,12 @@ export default function ReceiptScanner({ onApply }: Props) {
                 </div>
               </div>
               <p className="scan-warning">📄 पूरी slip को ऊपर से नीचे तक सीधा frame करें। Confirm से पहले चारों numbers जरूर मिलाएँ।</p>
-              <div className="scan-reading-grid">{readings.map((reading, index) => <label key={index}>
+              <div className="scan-reading-grid">{effectiveReadings.map((reading, index) => <label key={index}>
                 <span>T{index + 1}</span>
                 <input inputMode="decimal" value={reading} placeholder="नहीं मिली—यहाँ भरें" onChange={event => setReadings(values => values.map((value, i) => i === index ? event.target.value : value))} />
               </label>)}</div>
+              {missingLabels.length > 0 && readings.some(Boolean) && <div className="scan-error">{missingLabels.join(', ')} verify नहीं हुई—दूसरी समय वाली slip scan होने पर Day Volume से automatically derive हो सकती है; वरना manual भरें।</div>}
+              {displayConfidence > (confidence ?? 0) && <div className="scan-derived">✓ Missing reading को दूसरी slip + ShDayVol से calculate किया गया है। Confirm से पहले मिला लें।</div>}
               {error && <div className="scan-error">{error}</div>}
               {rawText && <details className="ocr-text"><summary>OCR text देखें</summary><pre>{rawText}</pre></details>}
             </>}
@@ -126,7 +141,7 @@ export default function ReceiptScanner({ onApply }: Props) {
 
         <div className="scanner-footer">
           {!busy && <button type="button" className="secondary" onClick={() => setCameraOpen(true)}>⌗ फिर scan करें</button>}
-          <button type="button" className="primary" disabled={busy || !readings.some(Boolean)} onClick={apply}>✓ {slot === 'morning' ? 'Morning' : 'Evening'} Auto Fill</button>
+          <button type="button" className="primary" disabled={busy || !effectiveReadings.some(Boolean)} onClick={apply}>✓ {slot === 'morning' ? 'Morning' : 'Evening'} Auto Fill</button>
         </div>
       </section>
     </div>}

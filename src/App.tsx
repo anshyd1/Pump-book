@@ -156,15 +156,23 @@ export default function App() {
     return { ...d, readings }
   })
   const updatePayment = (key: keyof Payments, value: string) => setDraft(d => ({ ...d, payments: { ...d.payments, [key]: value } }))
-  const applyScannedReadings = (values: string[], slot: ReadingSlot) => setDraft(d => ({
+  const applyScannedReadings = (values: string[], slot: ReadingSlot, dayVolumes: string[]) => setDraft(d => ({
     ...d,
     readings: {
       ...d.readings,
-      [d.mode]: d.readings[d.mode].map((reading, index) => ({
-        ...reading,
-        // सुबह की slip Opening में और शाम की slip Closing में—दो scan से कुल 8 readings।
-        [slot]: values[index] || reading[slot]
-      }))
+      [d.mode]: d.readings[d.mode].map((reading, index) => {
+        let morning = reading.morning, evening = reading.evening
+        const scanned = values[index], hasDayVolume = dayVolumes[index] !== '', dayVolume = num(dayVolumes[index])
+        if (slot === 'evening') {
+          if (scanned) evening = scanned
+          else if (morning && hasDayVolume) evening = (num(morning) + dayVolume).toFixed(3)
+          if (!morning && evening && hasDayVolume) morning = (num(evening) - dayVolume).toFixed(3)
+        } else {
+          // Morning slip केवल opening set करती है; zero ShDayVol से fake closing न बनाएँ।
+          if (scanned) morning = scanned
+        }
+        return { ...reading, morning, evening }
+      })
     }
   }))
   const clearEntries = () => setDraft(d => ({
@@ -253,7 +261,7 @@ export default function App() {
 
       <main>
         <section className="card">
-          <div className="section-head"><div className="section-title"><span className="section-icon scan-icon">⌗</span><div><p className="eyebrow">Step 01 · Capture</p><h2>Totalizer readings</h2><p className="section-sub">सुबह + शाम की slips से 8 readings</p></div></div><div className="section-tools"><ReceiptScanner onApply={applyScannedReadings} /></div></div>
+          <div className="section-head"><div className="section-title"><span className="section-icon scan-icon">⌗</span><div><p className="eyebrow">Step 01 · Capture</p><h2>Totalizer readings</h2><p className="section-sub">सुबह + शाम की slips से 8 readings</p></div></div><div className="section-tools"><ReceiptScanner existingReadings={draft.readings[draft.mode]} onApply={applyScannedReadings} /></div></div>
           <div className="totalizer-grid">{map.map((fuel, i) => <article className="totalizer" key={`${draft.mode}-${i}`}>
             <div className="totalizer-head"><b><small>Nozzle</small>T{i + 1}</b><span className={`fuel ${fuel.toLowerCase()}`}>{fuel}</span></div>
             <Field label="Evening / Closing" value={draft.readings[draft.mode][i].evening} step="0.001" placeholder="0.000" onChange={v => updateReading(i, 'evening', v)} />

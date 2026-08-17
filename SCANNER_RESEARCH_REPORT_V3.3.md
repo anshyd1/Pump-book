@@ -89,13 +89,25 @@ The new firmware also prints longer nozzle blocks, so CumVolume appears at diffe
 
 Actual browser retest:
 
-| Actual field photo | Verified result |
+| Actual field photo | Directly verified by OCR |
 |---|---|
-| 16/08/2026 19:01:59 | T1 `499590.788`, T2 `502042.401`, T3 `110544.109`; T4 remains unverified |
-| 16/08/2026 07:23:47 | T1 `499243.148`, T3 `110538.129`, T4 `478449.884`; T2 remains unverified |
+| 16/08/2026 19:01:59 | T1 `499590.788`, T2 `502042.401`, T3 `110544.109` |
+| 16/08/2026 07:23:47 | T1 `499243.148`, T3 `110538.129`, T4 `478449.884` |
 | Earlier Pump 21060975 | all four readings correct |
 
-The remaining morning T2 and evening T4 digits are crossed by pen marks / edge perspective in the supplied photos. The app intentionally leaves those values blank rather than fabricating a digit. The paired slips show the expected values visually as approximately T2 opening `501071.921` and T4 closing `478519.314`, but those should be confirmed by the operator.
+The pen mark obscures morning T2's last decimal and edge perspective damages evening T4 OCR. Version 3.4 therefore parses each nozzle's printed `ShDayVol` and reconciles the pair mathematically:
+
+- Morning = Evening − ShDayVol
+- Evening = Morning + ShDayVol
+
+Pair test in Chromium, scanning the supplied morning then evening photos, produced all eight verified values:
+
+- T1: opening `499243.148`, closing `499590.788`
+- T2: opening `501071.921`, closing `502042.401`
+- T3: opening `110538.129`, closing `110544.109`
+- T4: opening `478449.884`, closing `478519.314`
+
+The app also auto-selected Morning/Evening from the filename timestamp (`190448` and `190937`) when OCR time was unclear.
 
 ## Required next architecture for Paytm-level reliability
 

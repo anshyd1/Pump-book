@@ -19,6 +19,8 @@ A complete visual and scanning upgrade with the new **Pumpu** mascot, petrol-pum
 - Camera uses the device-native environment stream, full sensor `contain` preview, minimum hardware zoom and continuous focus where available
 - Uses full-resolution `ImageCapture.takePhoto()` when supported, with video-frame fallback; captured guide region is quality-checked for blur, darkness and glare
 - Layout-independent full-receipt OCR supports multiple pump firmware formats; no pump-specific totalizer magnitude is hard-coded
+- Paired-slip reconciliation: missing opening/closing values are safely derived from the other slip and each nozzle's printed ShDayVol
+- Slip time auto-detects Morning/Evening from OCR or the camera filename timestamp
 - Low-resolution inputs are upscaled, auto-cropped and locally adaptive-thresholded before a time-budgeted OCR fallback
 - Animated scanner frame, laser sweep, progress stages, confidence score and editable verification
 - Pumpu mascot, branded app header, new green/amber fuel theme and four-step daily closing journey
