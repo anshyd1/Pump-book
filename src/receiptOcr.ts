@@ -284,7 +284,7 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
   const worker = await getOcrWorker()
   const readings = ['', '', '', ''], dayVolumes = ['', '', '', ''], texts: string[] = []
   const filenameTime = file.name.match(/\d{8}(\d{2})\d{4}/)
-  let suggestedSlot: ReadingSlot | null = filenameTime ? (Number(filenameTime[1]) < 12 ? 'morning' : 'evening') : null
+  let suggestedSlot: ReadingSlot | null = filenameTime ? (Number(filenameTime[1]) < 12 ? 'morning' : 'evening') : (new Date().getHours() < 12 ? 'morning' : 'evening')
   const hasTime = () => performance.now() < deadline
 
   try {
