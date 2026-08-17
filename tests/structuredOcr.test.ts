@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { NativeBox, NativeMlKitResult } from '../src/nativeOcr'
 import { associatePumpFields } from '../src/structuredOcr'
-import { applySlipToPair } from '../src/scanPairing'
+import { applySlipToPair, dayVolumeMismatches, extremeDifferenceOutliers } from '../src/scanPairing'
+import { parseDocumentText } from '../src/receiptOcr'
 
 const line = (text: string, top: number, blockIndex: number, lineIndex: number): NativeBox => ({
   text, left: 30, top, right: 330, bottom: top + 16, blockIndex, lineIndex
@@ -106,4 +107,51 @@ test('morning/evening fixture reconciliation produces all 8 documented readings'
 
   assert.deepEqual(complete.map(item => item.morning), expectedMorning)
   assert.deepEqual(complete.map(item => item.evening), expectedEvening)
+})
+
+test('printed ShDayVol blocks the huge-positive T1 screenshot failure', () => {
+  const bad = [
+    { morning: '18642.315', evening: '1249178.182' },
+    { morning: '2506340.875', evening: '2507529.500' },
+    { morning: '987654.321', evening: '987890.801' },
+    { morning: '4752880.640', evening: '4753776.000' }
+  ]
+  const mismatches = dayVolumeMismatches(bad, ['412.750', '1188.625', '236.480', '895.360'])
+  assert.deepEqual(mismatches.map(item => item.nozzle), [1])
+  assert.equal(mismatches[0].calculated.toFixed(3), '1230535.867')
+  assert.deepEqual(extremeDifferenceOutliers(bad).map(item => item.nozzle), [1])
+})
+
+test('normal nozzle variation does not trigger magnitude-independent outlier hold', () => {
+  const pair = [
+    { morning: '100000.000', evening: '100120.000' },
+    { morning: '200000.000', evening: '201100.000' },
+    { morning: '300000.000', evening: '300240.000' },
+    { morning: '400000.000', evening: '400900.000' }
+  ]
+  assert.deepEqual(extremeDifferenceOutliers(pair), [])
+})
+
+test('matching generated receipt pair passes independent ShDayVol verification', () => {
+  const pair = [
+    { morning: '1248765.432', evening: '1249178.182' },
+    { morning: '2506340.875', evening: '2507529.500' },
+    { morning: '987654.321', evening: '987890.801' },
+    { morning: '4752880.640', evening: '4753776.000' }
+  ]
+  assert.deepEqual(dayVolumeMismatches(pair, ['412.750', '1188.625', '236.480', '895.360']), [])
+})
+
+test('text fallback stops at another field instead of stealing ShMTHVol or CumSale', () => {
+  const parsed = parseDocumentText([
+    'Nozzle No1',
+    'CumVolume:',
+    'ShMTHVol : 1234567.890',
+    'CumSale : 7654321.000',
+    'Nozzle No2',
+    'CumVolume:',
+    '2507529.500'
+  ].join('\n'))
+  assert.equal(parsed[0], '')
+  assert.equal(parsed[1], '2507529.500')
 })

@@ -6,7 +6,7 @@ import type { FieldAssociation } from './structuredOcr'
 export type ReadingSlot = 'morning' | 'evening'
 export type StageTiming = { stage: string; durationMs: number }
 export type ScanDiagnostics = {
-  version: '4.1.3'
+version: '4.2.0'
   platform: 'android-native' | 'pwa'
   source: { name: string; type: string; sizeBytes: number; width: number; height: number }
   totalMs: number
@@ -215,13 +215,36 @@ const markerRegex = /[n0o]\s*[o0]?\s*[z2]\s*[z2]\s*l\s*e\s*n\s*[o0]\s*([0-9oOIl|
 const labelRegex = /[cs]?\s*[uoy]\s*m\s*v\s*[o0]\s*l?\s*[uoy]\s*m\s*[eoc]?\s*:?/gi
 
 const markerNumber = (char: string) => Number(char.replace(/[oO]/g, '0').replace(/[Il|]/g, '1').replace(/[zZ?/]/g, '2').replace(/[dD]/g, '4').replace(/[sS]/g, '5'))
-const cumVolumeFromSection = (text: string) => {
-  for (const label of text.matchAll(labelRegex)) {
-    const value = numberFrom(text.slice(label.index! + label[0].length, label.index! + label[0].length + 100))
-    if (value) return value
-  }
-  return ''
+const looksLikeAnotherPumpField = (line: string) => {
+  const value = line.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return /(?:sh|shi|shift|cum|curn|sum)(?:f?[123]|day|mth)?(?:sale|volume|vol|v0l)/.test(value)
 }
+
+// Only read the CumVolume label row or its immediate value row. The previous
+// 100-character tail could cross into ShMTHVol/CumSale when OCR reordered
+// lines, producing a valid-looking but dangerous cumulative total.
+const cumVolumeValues = (text: string): string[] => {
+  const lines = text.replace(/\r/g, '').split('\n')
+  const found: string[] = []
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const label = Array.from(line.matchAll(labelRegex))[0]
+    if (!label) continue
+    const sameLine = numberFrom(line.slice(label.index! + label[0].length))
+    if (sameLine) { found.push(sameLine); continue }
+    for (let offset = 1; offset <= 2; offset += 1) {
+      const next = lines[index + offset] ?? ''
+      if (!next.trim()) continue
+      if (looksLikeAnotherPumpField(next)) break
+      const value = numberFrom(next)
+      if (value) found.push(value)
+      break
+    }
+  }
+  return found
+}
+
+const cumVolumeFromSection = (text: string) => cumVolumeValues(text)[0] ?? ''
 const cropBelowCumVolume = (section: HTMLCanvasElement, tsv: string | null): HTMLCanvasElement | null => {
   if (!tsv) return null
   const words = tsv.split('\n').slice(1).map(line => line.split('\t')).filter(columns => columns.length >= 12)
@@ -252,20 +275,13 @@ export function parseDocumentText(raw: string): string[] {
     }
     markers.forEach((marker, index) => {
       const section = text.slice(marker.index, markers[index + 1]?.index ?? text.length)
-      for (const label of section.matchAll(labelRegex)) {
-        const tail = section.slice(label.index! + label[0].length, label.index! + label[0].length + 100)
-        const value = numberFrom(tail)
-        if (value) { result[marker.nozzle - 1] = value; break }
-      }
+      const value = cumVolumeFromSection(section)
+      if (value) result[marker.nozzle - 1] = value
     })
   }
 
   // Zoom/crop में nozzle heading कट सकती है; visible CumVolume labels को order में use करें।
-  const ordered: string[] = []
-  for (const label of text.matchAll(labelRegex)) {
-    const value = numberFrom(text.slice(label.index! + label[0].length, label.index! + label[0].length + 100))
-    if (value) ordered.push(value)
-  }
+  const ordered = cumVolumeValues(text)
   if (!markers.length && ordered.length) ordered.slice(0, 4).forEach((value, index) => { result[index] = value })
   return result
 }
@@ -318,7 +334,7 @@ export async function scanNativeReceipt(onProgress: (progress: number, status: s
   parseDayVolumes(native.text).forEach((value, index) => { if (!dayVolumes[index] && value) dayVolumes[index] = value })
   const processingMs = native.processingMs
   const diagnostics: ScanDiagnostics = {
-    version: '4.1.3',
+    version: '4.2.0',
     platform: 'android-native',
     source: {
       name: source === 'document' ? 'mlkit-perspective-corrected.jpg' : 'native-gallery-image.jpg',
@@ -521,7 +537,7 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
     markStage('tesseract-targeted-fallbacks')
     const totalMs = Math.round(performance.now() - started)
     const diagnostics: ScanDiagnostics = {
-      version: '4.1.3',
+      version: '4.2.0',
       platform: 'pwa',
       source: { name: file.name, type: file.type, sizeBytes: file.size, width: loaded.width, height: loaded.height },
       totalMs,

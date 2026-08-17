@@ -80,6 +80,10 @@ const selectValueLine = (
     const values = numbersFor(line.text, kind)
     if (!values.length) continue
     const overlapsLabelRow = line.bottom >= label.top && line.top <= label.bottom
+    // A line carrying another known field label is never this label's value,
+    // even if ML Kit returned it below/out of reading order. This blocks
+    // ShMTHVol/ShMTHSale/CumSale from becoming a plausible huge CumVolume.
+    if (line !== label && isKnownFieldLabel(line.text)) continue
     // On these receipts CumVolume/ShDayVol is printed on the label row or
     // below it. Never pull ShMTHSale/ShMTHVol from above a missing CumVolume.
     if (line !== label && !overlapsLabelRow && line.top < label.top) continue

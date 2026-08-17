@@ -6,14 +6,16 @@ import SmartCamera from './SmartCamera'
 import { nativeMlKitAvailable } from './nativeOcr'
 import { exportScanDiagnostics } from './scanDiagnostics'
 import type { ReadingSlot, ScanResult } from './receiptOcr'
+import { dayVolumeMismatches } from './scanPairing'
 
 type ExistingReading = { morning: string; evening: string }
 type Props = {
   existingReadings: ExistingReading[]
+  knownDayVolumes?: string[]
   onApply: (readings: string[], slot: ReadingSlot, dayVolumes: string[], allowOppositeDerivation: boolean) => void
 }
 
-export default function ReceiptScanner({ existingReadings, onApply }: Props) {
+export default function ReceiptScanner({ existingReadings, knownDayVolumes = ['', '', '', ''], onApply }: Props) {
   const galleryRef = useRef<HTMLInputElement>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [open, setOpen] = useState(false)
@@ -131,9 +133,17 @@ export default function ReceiptScanner({ existingReadings, onApply }: Props) {
     if (slot === 'morning' && existing?.evening && Number(value) > Number(existing.evening)) return `T${index + 1}`
     return ''
   }).filter(Boolean)
+  const verificationDayVolumes = dayVolumes.map((value, index) => Number(value) > 0 ? value : knownDayVolumes[index] ?? '')
+  const candidatePair = existingReadings.map((reading, index) => slot === 'morning'
+    ? { ...reading, morning: effectiveReadings[index] || reading.morning }
+    : slot === 'evening'
+      ? { ...reading, evening: effectiveReadings[index] || reading.evening }
+      : reading
+  )
+  const dayVolumeIssues = dayVolumeMismatches(candidatePair, verificationDayVolumes)
   const displayConfidence = effectiveReadings.filter(Boolean).length * 25
   const apply = () => {
-    if (!slot || invalidOrderLabels.length || !effectiveReadings.some(Boolean)) return
+    if (!slot || invalidOrderLabels.length || dayVolumeIssues.length || !effectiveReadings.some(Boolean)) return
     const opposite: ReadingSlot = slot === 'morning' ? 'evening' : 'morning'
     const oppositeKey = opposite
     const hasOppositeEvidence = scannedSlots.has(opposite) || existingReadings.some(reading => Boolean(reading[oppositeKey]))
@@ -152,7 +162,7 @@ export default function ReceiptScanner({ existingReadings, onApply }: Props) {
     {open && <div className="scanner-backdrop" role="presentation" onClick={close}>
       <section className="scanner-modal" role="dialog" aria-modal="true" aria-labelledby="scanner-title" onClick={event => event.stopPropagation()}>
         <div className="scanner-head">
-          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · ML KIT 4.1.3</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
+          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · ML KIT 4.2.0</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
           <button type="button" className="scanner-close" disabled={busy} onClick={close}>✕</button>
         </div>
 
@@ -181,6 +191,7 @@ export default function ReceiptScanner({ existingReadings, onApply }: Props) {
               </label>)}</div>
               {missingLabels.length > 0 && readings.some(Boolean) && <div className="scan-error">{missingLabels.join(', ')} इस photo में साफ verify नहीं हुई। पहले ये reading Confirm करें, फिर दूसरी समय वाली slip scan करें—ShDayVol से missing totalizer safely निकलेगा।</div>}
               {invalidOrderLabels.length > 0 && <div className="scan-error">{invalidOrderLabels.join(', ')} की Closing, Opening से कम पढ़ी गई है। यह CumVolume नहीं हो सकती—Auto Fill रोक दिया गया है।</div>}
+              {dayVolumeIssues.map(issue => <div className="scan-error" key={issue.nozzle}><b>T{issue.nozzle} safety check failed.</b> Closing − Opening {issue.calculated.toFixed(3)} L है, लेकिन slip का ShDayVol {issue.printed.toFixed(3)} L है। गलत neighbouring field save नहीं की गई।</div>)}
               {displayConfidence > (confidence ?? 0) && <div className="scan-derived">✓ Missing reading को दूसरी slip + ShDayVol से calculate किया गया है। Confirm से पहले मिला लें।</div>}
               {error && <div className="scan-error">{error}</div>}
               {lastResult?.diagnostics.native && <div className="scan-derived">⏱ Native processing: {lastResult.diagnostics.native.processingMs} ms · ML Kit OCR: {lastResult.diagnostics.native.ocrMs} ms · {lastResult.diagnostics.native.associations.length} boxed fields</div>}
@@ -192,7 +203,7 @@ export default function ReceiptScanner({ existingReadings, onApply }: Props) {
 
         <div className="scanner-footer">
           {!busy && <button type="button" className="secondary" onClick={() => nativeScanner ? void startNativeScan() : setCameraOpen(true)}>⌗ फिर scan करें</button>}
-          <button type="button" className="primary" disabled={busy || !slot || invalidOrderLabels.length > 0 || !effectiveReadings.some(Boolean)} onClick={apply}>✓ {slot ? `${slot === 'morning' ? 'Morning' : 'Evening'} Auto Fill` : 'पहले Morning / Evening चुनें'}</button>
+          <button type="button" className="primary" disabled={busy || !slot || invalidOrderLabels.length > 0 || dayVolumeIssues.length > 0 || !effectiveReadings.some(Boolean)} onClick={apply}>✓ {dayVolumeIssues.length ? 'ShDayVol mismatch—check readings' : slot ? `${slot === 'morning' ? 'Morning' : 'Evening'} Auto Fill` : 'पहले Morning / Evening चुनें'}</button>
         </div>
       </section>
     </div>}
