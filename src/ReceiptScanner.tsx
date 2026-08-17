@@ -50,7 +50,7 @@ export default function ReceiptScanner({ existingReadings, onApply }: Props) {
     try {
       const result = await scanReceipt(file, (value, nextStatus) => {
         setProgress(Math.round(value * 100))
-        setStatus(nextStatus === 'recognizing text' ? 'Fast OCR से 4 readings पढ़ रहे हैं…' : nextStatus === 'detecting receipt' ? 'Receipt auto-frame हो रही है…' : 'OCR engine तैयार हो रहा है…')
+        setStatus(nextStatus === 'native ml kit' ? 'Google ML Kit से instant scan…' : nextStatus === 'recognizing text' ? 'Fast OCR से 4 readings पढ़ रहे हैं…' : nextStatus === 'detecting receipt' ? 'Receipt auto-frame हो रही है…' : 'OCR engine तैयार हो रहा है…')
       })
       setReadings(result.readings)
       setDayVolumes(result.dayVolumes)
@@ -104,7 +104,7 @@ export default function ReceiptScanner({ existingReadings, onApply }: Props) {
     {open && <div className="scanner-backdrop" role="presentation" onClick={close}>
       <section className="scanner-modal" role="dialog" aria-modal="true" aria-labelledby="scanner-title" onClick={event => event.stopPropagation()}>
         <div className="scanner-head">
-          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · SMART OCR 3.4.0</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
+          <div className="scanner-brand"><BrandMascot compact scanning={busy}/><div><p className="eyebrow">PUMP VISION · ML KIT 4.0.1</p><h2 id="scanner-title">Slip Intelligence</h2><span>Auto enhance · deskew · read</span></div></div>
           <button type="button" className="scanner-close" disabled={busy} onClick={close}>✕</button>
         </div>
 

@@ -1,4 +1,5 @@
 import { createWorker, PSM } from 'tesseract.js'
+import { recognizeWithMlKit } from './nativeOcr'
 
 export type ReadingSlot = 'morning' | 'evening'
 export type ScanResult = { readings: string[]; dayVolumes: string[]; confidence: number; rawText: string; slipTime: string; suggestedSlot: ReadingSlot | null }
@@ -277,16 +278,30 @@ export async function scanReceipt(file: File, onProgress: (progress: number, sta
   const source = imageCanvas(loaded), normalized = normalizeReceipt(loaded)
   const width = source.width, height = source.height
   let stage = 0
-  workerLogger = (progress, status) => {
-    if (status === 'recognizing text') onProgress(Math.min(.94, .08 + stage * .15 + progress * .12), 'recognizing text')
-    else onProgress(.04, status)
-  }
-  const worker = await getOcrWorker()
   const readings = ['', '', '', ''], dayVolumes = ['', '', '', ''], texts: string[] = []
   const filenameTime = file.name.match(/\d{8}(\d{2})\d{4}/)
   let suggestedSlot: ReadingSlot | null = filenameTime ? (Number(filenameTime[1]) < 12 ? 'morning' : 'evening') : (new Date().getHours() < 12 ? 'morning' : 'evening')
   const hasTime = () => performance.now() < deadline
 
+  // Android APK: Google ML Kit runs on-device and normally returns in under a second.
+  onProgress(.12, 'native ml kit')
+  const nativeText = await recognizeWithMlKit(normalized)
+  if (nativeText) {
+    texts.push(`Native ML Kit:\n${nativeText}`)
+    parseDocumentText(nativeText).forEach((value, index) => { const verified = validForNozzle(value, index); if (verified) readings[index] = verified })
+    parseDayVolumes(nativeText).forEach((value, index) => { if (value) dayVolumes[index] = value })
+    suggestedSlot = detectSlipSlot(nativeText) ?? suggestedSlot
+    if (readings.filter(Boolean).length >= 2) {
+      onProgress(1, 'native ml kit')
+      return { readings, dayVolumes, confidence: readings.filter(Boolean).length * 25, rawText: texts.join('\n'), slipTime: '', suggestedSlot }
+    }
+  }
+
+  workerLogger = (progress, status) => {
+    if (status === 'recognizing text') onProgress(Math.min(.94, .08 + stage * .15 + progress * .12), 'recognizing text')
+    else onProgress(.04, status)
+  }
+  const worker = await getOcrWorker()
   try {
     // Layout-independent first pass: firmware versions place CumVolume at different heights.
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN, tessedit_char_whitelist: '', preserve_interword_spaces: '1', user_defined_dpi: '300' })

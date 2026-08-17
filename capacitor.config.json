@@ -1,0 +1,7 @@
+{
+  "appId": "in.pumpbook.app",
+  "appName": "Pump Book",
+  "webDir": "dist",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}

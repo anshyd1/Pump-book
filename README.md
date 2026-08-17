@@ -4,7 +4,9 @@ Professional React + TypeScript progressive web app for one-day fuel totalizer a
 
 Live: https://anshyd1.github.io/Pump-book/
 
-## Pump Book 2.0
+## Pump Book 4.0
+
+**Two targets:** installable PWA plus Android APK with free, unlimited, on-device Google ML Kit OCR. The Android build uses native ML Kit first and keeps Tesseract as fallback; no OCR API key or per-scan cloud billing.
 
 A complete visual and scanning upgrade with the new **Pumpu** mascot, petrol-pump brand system, animated Pump Vision scanner, responsive workflow navigation and refreshed PWA icons.
 
